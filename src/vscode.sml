@@ -187,8 +187,9 @@ end *)
 
 type parse_data =
   int * PolyML.parseTree list *
-  ((int * int) * (int * int) * Preterm.preterm * Pretype.Env.t) list
-val emptyParseData: parse_data = (0, [], [])
+  ((int * int) * (int * int) * Preterm.preterm * Pretype.Env.t) list *
+  ((int * int) * HolParser.Simple.decl * (int * int) TacticParser.tac_expr) list
+val emptyParseData: parse_data = (0, [], [], [])
 
 val filename = ref ""
 val currentThread = ref 0
@@ -216,6 +217,16 @@ val printToAsyncChannel = let
     if !currentThread = id then printer $ printToString f suff
     else raise Thread.Interrupt
   end
+
+val lastFailedTactic = ref (NONE: (int*int) option)
+fun wrapTactic start (f:'a->'b) stop x =
+  f x handle e => (
+    if
+      case !lastFailedTactic of
+        NONE => false
+      | SOME (start', stop') => start <= start' andalso stop' <= stop
+    then () else lastFailedTactic := SOME (start, stop);
+    PolyML.Exception.reraise e)
 
 fun mkLineCounter str = let
   fun loop i ls =
@@ -269,7 +280,7 @@ val _ = Listener.add_listener Preterm.typecheck_listener ("vscode", fn (ptm, env
     SOME ((trees, _), _) =>
     (case get_locn (Preterm.locn ptm) of
       SOME (start, stop) =>
-      (case !trees of (p, ts, qs) => trees := (p, ts, (start, stop, ptm, env) :: qs))
+      (case !trees of (p, ts, qs, ds) => trees := (p, ts, (start, stop, ptm, env) :: qs, ds))
     | _ => ())
   | _ => ())
   handle Listener.DUP _ =>
@@ -280,13 +291,11 @@ fun setFileContents text = let
       SOME ((trees, text), thread) => (
       Thread.interrupt thread;
       currentCompilation := NONE;
-      case !trees of (_, [], _) => () | trees => lastTrees := (trees, text))
+      case !trees of (_, [], _, _) => () | trees => lastTrees := (trees, text))
     | NONE => ()
   val lines = mkLineCounter text
   val trees = ref emptyParseData
-  fun compileThread () = let
-    val id = !currentThread + 1
-    val () = currentThread := id
+  fun compileThread id = let
     fun printError hard pos msg = printToAsyncChannel id (fn print => (
       print "{\"kind\":\"error\"";
       print ",\"hard\":"; print (if hard then "true" else "false");
@@ -294,47 +303,56 @@ fun setFileContents text = let
       print ",\"msg\":"; encodeJsonPretty msg print;
       print "}"))
     open HolParser.Simple
+    val lastHolTree = ref (HolParser.Simple.Chunk 0)
     (* fun addq q = case !trees of (p, ts, qs) => trees := (p, ts, q :: qs) *)
     val _ = PolyML.print_depth 100
-    in
-      (HOL_IDE.initialize {
-        text = text,
-        filename = !filename,
-        parseError = fn pos => fn s => printToAsyncChannel id (fn print => (
-          print "{\"kind\":\"error\",\"hard\":true";
-          print ",\"pos\":"; encodeJsonPos2LC lines pos print;
-          print ",\"msg\":"; encodeJsonString s print;
-          print "}")),
-        compilerOut = fn s => printToAsyncChannel id (fn print => (
-          print "{\"kind\":\"compilerOut\"";
-          print ",\"body\":"; encodeJsonString s print;
-          print "}")),
-        toplevelOut = fn s => printToAsyncChannel id (fn print => (
-          print "{\"kind\":\"toplevelOut\"";
-          print ",\"body\":"; encodeJsonString s print;
-          print "}")),
-        progress = fn i => printToAsyncChannel id (fn print => (
-          case !trees of (_, ts, qs) => trees := (i, ts, qs);
-          print "{\"kind\":\"compileProgress\"";
-          print ",\"pos\":"; encodeJsonPosLC lines i print;
-          print "}")),
-        error = fn {hard, location = {startPosition, endPosition, ...}, message, ...} =>
-          printError hard (startPosition, endPosition) message,
-        runtimeExn = fn e =>
-          printError true
-            (case PolyML.Exception.exceptionLocation e of
-              NONE => (fn i => (i, i)) (#1 (!trees))
-            | SOME {startPosition, endPosition, ...} => (startPosition, endPosition))
-            (exceptionMessage e),
-        mlParseTree = fn t => case !trees of (p, ts, qs) => trees := (p, t :: ts, qs),
-        holParseTree = fn _ => ()
-      };
-      lastTrees := (!trees, (text, lines));
-      currentCompilation := NONE;
-      printToAsyncChannel id (fn print => print "{\"kind\":\"compileCompleted\"}"))
-      handle Thread.Interrupt =>
-        printToAsyncChannel id (fn print => print "{\"kind\":\"interrupted\"}")
-    end
+    val _ = HOL_IDE.initialize {
+      wrapTactics = false,
+      filename = !filename,
+      text = text,
+      parseError = fn pos => fn s => printToAsyncChannel id (fn print => (
+        print "{\"kind\":\"error\",\"hard\":true";
+        print ",\"pos\":"; encodeJsonPos2LC lines pos print;
+        print ",\"msg\":"; encodeJsonString s print;
+        print "}")),
+      holParseTree = fn t => lastHolTree := t,
+      tacticBlock = fn (start, stop, t) =>
+        case !trees of (p, ts, qs, ds) =>
+          trees := (p, ts, qs, ((start, stop), !lastHolTree, t) :: ds)
+    } {
+      compile = true,
+      compilerOut = fn s => printToAsyncChannel id (fn print => (
+        print "{\"kind\":\"compilerOut\"";
+        print ",\"body\":"; encodeJsonString s print;
+        print "}")),
+      toplevelOut = fn s => printToAsyncChannel id (fn print => (
+        print "{\"kind\":\"toplevelOut\"";
+        print ",\"body\":"; encodeJsonString s print;
+        print "}")),
+      progress = fn i => printToAsyncChannel id (fn print => (
+        case !trees of (_, ts, qs, ds) => trees := (i, ts, qs, ds);
+        print "{\"kind\":\"compileProgress\"";
+        print ",\"pos\":"; encodeJsonPosLC lines i print;
+        print "}")),
+      error = fn {hard, location = {startPosition, endPosition, ...}, message, ...} =>
+        printError hard (startPosition, endPosition) message,
+      runtimeExn = fn e =>
+        printError true
+          (case PolyML.Exception.exceptionLocation e of
+            NONE => (fn i => (i, i)) (#1 (!trees))
+          | SOME {startPosition, endPosition, ...} => (startPosition, endPosition))
+          (exceptionMessage e),
+      mlParseTree = fn t => case !trees of (p, ts, qs, ds) => trees := (p, t :: ts, qs, ds)
+    }
+    val _ = lastTrees := (!trees, (text, lines))
+    val _ = currentCompilation := NONE
+    in printToAsyncChannel id (fn print => print "{\"kind\":\"compileCompleted\"}") end
+  val compileThread = fn () => let
+    val id = !currentThread + 1
+    val () = currentThread := id
+    val _ = compileThread id handle Thread.Interrupt =>
+      printToAsyncChannel id (fn print => print "{\"kind\":\"interrupted\"}")
+    in () end
   val thread = Thread.fork (compileThread, [Thread.InterruptState Thread.InterruptDefer])
   in currentCompilation := SOME ((trees, (text, lines)), thread) end
 
@@ -497,7 +515,7 @@ end
 
 fun getState startTarget endTarget = let
   val state = case !currentCompilation of
-      SOME ((ref (stop, trees, ds), (text, lines)), _) =>
+      SOME ((ref (stop, trees, ds, _), (text, lines)), _) =>
       if stop > 0 then let
         val offset = fromLineCol lines endTarget
         in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
@@ -505,7 +523,7 @@ fun getState startTarget endTarget = let
     | NONE => NONE
   val state = case state of
       NONE => let
-      val ((stop, trees, ds), (text, lines)) = !lastTrees
+      val ((stop, trees, ds, _), (text, lines)) = !lastTrees
       in
         if stop > 0 then let
           val offset = fromLineCol lines endTarget
@@ -729,5 +747,31 @@ fun gotoDefinition target =
       | LineCol range => encodeJsonPair2 (encodeJsonPair2 encodeJsonInt) range
     in encodeJsonArray (encodeJsonPair2 encodeJsonPosition) out print end
   | _ => print "[]"
+
+fun selectTacticSeq startTarget endTarget = let
+  val state = case !currentCompilation of
+    SOME ((ref (_, _, _, ds as ((_, stop), _, _) :: _), (text, lines)), _) => let
+    val offset = fromLineCol lines endTarget
+    in if offset <= stop then SOME (text, lines, ds) else NONE end
+  | _ => NONE
+  val (text, lines, ds) = case state of
+    NONE => let
+    val ((_, _, _, ds), (text, lines)) = !lastTrees
+    in (text, lines, ds) end
+  | SOME state => state
+  val startOffset = fromLineCol lines startTarget
+  val endOffset = fromLineCol lines startTarget
+  open TacticParser
+  fun build sp e = let
+    val ls = sliceTacticBlock startOffset endOffset false sp e
+    in if List.all null ls then NONE else SOME (printFragsAsE text ls) end
+  fun findProof [] = NONE
+    | findProof (((start, stop), decl, tree) :: ds) =
+      if start > startOffset then findProof ds else
+      if stop < endOffset then NONE else build (start, stop) tree
+  val _ = case findProof ds of
+    NONE => print "null"
+  | SOME s => encodeJsonString s print
+  in () end
 
 end;

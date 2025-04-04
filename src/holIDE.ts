@@ -135,7 +135,7 @@ export class HOLIDE {
                 'help/src-sml/ParseDoc.sml',
             ].map(f => path.join(holPath, f)),
             ...[
-                'holide.sml', 'vscodeBase.sml', 'vscode.sml', 'setup.sml'
+                'tacticParser.sml', 'holide.sml', 'vscodeBase.sml', 'vscode.sml', 'setup.sml'
             ].map(f => context.asAbsolutePath(path.join('src', f))),
         ]) {
             this.prelude += `val _ = use ${escapeMLString(file)};\n`;

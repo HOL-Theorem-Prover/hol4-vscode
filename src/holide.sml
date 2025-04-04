@@ -8,7 +8,6 @@ let (* autoconf-like hack *)
   fun read () = (SOME (String.sub (s, !i)) before i := !i + 1) handle Subscript => NONE
   in PolyML.compiler (read, []) () handle _ => () end; (* <- important semicolon *)
 *)
-
 structure HOL_IDE: sig
 
 type error =
@@ -20,19 +19,21 @@ type trees = PolyML.parseTree list
 val prelude: unit -> unit
 val postPrelude: unit -> unit
 
-val compile: bool ref
-
 val initialize:
-  { text: string,
+  { wrapTactics: bool,
+    text: string,
     filename: string,
     parseError: int * int -> string -> unit,
+    holParseTree: HolLex.UserDeclarations.decl -> unit,
+    tacticBlock: int * int * (int * int * substring) tac_expr -> unit
+  } ->
+  { compile: bool,
     compilerOut: string -> unit,
     toplevelOut: string -> unit,
     progress: int -> unit,
     error: error -> unit,
     runtimeExn: exn -> unit,
-    mlParseTree: PolyML.parseTree -> unit,
-    holParseTree: HolParser.Simple.decl -> unit
+    mlParseTree: PolyML.parseTree -> unit
   } -> unit
 
 val moveUp: subtree -> subtree
@@ -63,52 +64,148 @@ fun prelude () = Tactical.set_prover (fn (t, _) => mk_oracle_thm "fast_proof" ([
 
 fun postPrelude () = ()
 
-val compile = ref true
+datatype chunk
+  = RegularChunk of int * substring
+  | FlatChunk of int option * substring
+  | EOFChunk
 
-fun initialize {
-  text, filename, parseError, compilerOut, toplevelOut, progress, error,
-  runtimeExn, mlParseTree, holParseTree
-} = let
-  datatype Chunk
-    = RegularChunk of int * substring
-    | FlatChunk of int option * substring
-    | EOFChunk
-
+fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlock} = let
   val sr = ref text
   val queue = ref []
   fun push chunk = queue := chunk :: !queue
   fun encode f (i, s) = let
     val j = i + #2 (Substring.base s)
     in f (fn s => push (FlatChunk (SOME j, Substring.full s))) (i, s) end
+  fun aux s = push (FlatChunk (NONE, Substring.full s))
   val {feed, regular, finishThmVal, doDecl, ...} =
     HolParser.ToSML.mkPushTranslatorCore {
       filename = filename, parseError = parseError, quietOpen = true,
       read = fn _ => !sr before sr := ""
     } {
       regular = push o RegularChunk,
-      aux = fn s => push (FlatChunk (NONE, Substring.full s)),
+      aux = aux,
       strstr = encode HolParser.ToSML.strstr,
       strcode = encode HolParser.ToSML.strcode
     }
-  val atEnd = ref false
+  fun reparseTacticBlock (HolParser.Simple.Decls {start, stop, ...}) = let
+    fun processChunks chunks = let
+      val body = Substring.concat $ C map chunks (fn
+          RegularChunk (_, ss) => ss
+        | FlatChunk (_, ss) => ss
+        | EofChunk => Substring.full "")
+      val inbox = ref chunks
+      fun pushN n start = if n = 0 then start else
+        case !inbox of
+          (chunk as RegularChunk (base, ss)) :: rest => let
+          val (_, lo, len) = Substring.base ss
+          in
+            if len <= n then (
+              queue := chunk :: !queue;
+              inbox := rest;
+              pushN (n - len) (base + lo + len))
+            else let
+              val (ss1, ss2) = Substring.splitAt (ss, n)
+              val _ = queue := RegularChunk (base, ss1) :: !queue
+              val _ = inbox := RegularChunk (base, ss2) :: rest
+              in base + lo + n end
+          end
+        | (chunk as FlatChunk (i, ss)) :: rest =>let
+          val len = Substring.size ss
+          val start = Option.getOpt (i, start)
+          in
+            if len <= n then (
+              queue := chunk :: !queue;
+              inbox := rest;
+              pushN (n - len) start)
+            else let
+              val (ss1, ss2) = Substring.splitAt (ss, n)
+              val _ = queue := FlatChunk (i, ss1) :: !queue
+              val _ = inbox := FlatChunk (i, ss2) :: rest
+              in start end
+          end
+        | _ => start
+      val blockPos = ref 0
+      val pos = ref start
+      fun tr i = (pos := pushN (i - !blockPos) (!pos); blockPos := i; !pos)
+      val tacs = ref []
+      fun f isTac (start, stop) = let
+        val start' = tr start
+        val _ = if isTac andalso wrapTactics then
+          app aux ["(VSCode.wrapTactic ", Int.toString start', " ("]
+        else ()
+        in (start, start', stop) end
+      fun g isTac (start, start', stop) = let
+        val stop' = tr stop
+        val _ = if isTac andalso wrapTactics then
+          app aux [") ", Int.toString stop', ")"]
+        else ()
+        in (start', stop', Substring.substring (body, start, stop - start)) end
+      open TacticParser
+      fun repair _ s = if s = "" then () else (
+        parseError (!pos, !pos) ("missing '"^s^"' inserted");
+        aux s)
+      val () = tacticBlock (start, stop, mapTacExpr (f, g, repair) $ parseTacticBlock body)
+      in queue := List.revAppend (!inbox, !queue) end
+    fun goMid [] acc _ = acc
+      | goMid (chunk :: chunks) acc after =
+        if case chunk of
+            RegularChunk (base, ss) => base + #2 (Substring.base ss) <= start
+          | _ => false
+        then let
+          val _ = queue := chunks
+          val _ = processChunks (chunk :: acc)
+          in List.revAppend (!queue, after) end
+        else goMid chunks (chunk :: acc) after
+    fun goEnd [] acc = acc
+      | goEnd (chunk :: chunks) acc =
+        if case chunk of
+            RegularChunk (base, ss) => base + #2 (Substring.base ss) >= stop
+          | _ => true
+        then goEnd chunks (chunk :: acc)
+        else goMid (chunk :: chunks) [] acc
+    in goEnd (!queue) [] end
   val pos = ref 0
+  fun pull () = (
+    queue := [];
+    case feed () of
+      HolParser.Simple.TopDecl d => (false, (
+      holParseTree d;
+      pos := doDecl true (!pos) d;
+      case d of
+        HolParser.Simple.DefinitionDecl {termination = SOME {decls, ...}, ...} =>
+        reparseTacticBlock decls
+      | HolParser.Simple.TheoremDecl {body, ...} => reparseTacticBlock body
+      | _ => rev (!queue)))
+    | HolParser.Simple.EOF p =>
+      (regular (!pos, p); finishThmVal (); pos := p; (true, rev (!queue))))
+  in pull end
+
+fun pass1 args = let
+  val pull = pullChunks args
+  fun loop ls = case pull () of
+    (false, q) => loop (q :: ls)
+  | (true, q) => rev (q :: ls)
+  in loop [] end
+
+fun pass2 chunks
+  {compile, compilerOut, toplevelOut, progress, error, runtimeExn, mlParseTree} = let
+
+  val queue = ref []
+  val chunks = ref $ PolyML.print chunks
   fun readChunk () =
     case !queue of
       s :: rest => (queue := rest; s)
-    | [] => if !atEnd then EOFChunk else (
-      case feed () of
-        HolParser.Simple.TopDecl d => (holParseTree d; pos := doDecl true (!pos) d)
-      | HolParser.Simple.EOF p =>
-        (regular (!pos, p); finishThmVal (); pos := p; atEnd := true);
-      queue := rev (!queue);
-      readChunk ())
+    | [] =>
+      case !chunks of
+        [] => EOFChunk
+      | q :: rest => (queue := q; chunks := rest; readChunk ())
 
   datatype State
     = Reading of (int * bool) * int * int * string
     | EOF of int
   fun toState start = fn
       EOFChunk => EOF start
-    | RegularChunk (base, ss) => let
+    | chunk as RegularChunk (base, ss) => let
       val (s, lo, len) = Substring.base ss
       in Reading ((base, true), lo, lo + len, s) end
     | FlatChunk (i, ss) => let
@@ -123,9 +220,9 @@ fun initialize {
         (curToken := Reading (base, lo+1, hi, s); SOME (String.sub(s, lo)))
       else (
         curToken := toState (if #2 base then #1 base + hi else #1 base) (readChunk ());
-        if lo+1 = hi then SOME (String.sub(s, lo)) else read2 ())
+        if lo+1 = hi then SOME (String.sub (s, lo)) else read2 ())
   fun getOffset () = case !curToken of
-      Reading ((base, flat), lo, hi, s) => if flat then base + lo else base
+      Reading ((base, reg), lo, hi, s) => if reg then base + lo else base
     | EOF pos => pos
   val serial = ref 1
   val result = ref []
@@ -137,8 +234,9 @@ fun initialize {
       fun enter f = app (f PolyML.globalNameSpace)
       in enter #enterFix fixes; enter #enterType types; enter #enterSig signatures;
          enter #enterStruct structures; enter #enterFunct functors; enter #enterVal values end
-  open PolyML.Compiler
-  val parameters = (if !compile then [] else noCompile) @ [
+  val print' = print
+  open PolyML open Compiler
+  val parameters = (if compile then [] else noCompile) @ [
     CPOutStream compilerOut,
     CPPrintStream toplevelOut,
     CPErrorMessageProc error,
@@ -151,7 +249,14 @@ fun initialize {
     case !curToken of
       EOF _ => ()
     | _ => ((PolyML.compiler (read2, parameters) () handle e => runtimeExn e); loop ()))
+  fun printInput ls =
+    case read2 () of
+      SOME c => printInput (c :: ls)
+    | NONE => (print' $ String.implode (rev ls); ())
+  (* fun loop () = printInput [] *)
   in loop () end;
+
+val initialize = pass2 o pass1
 
 fun moveUp NONE = NONE
   | moveUp (SOME (_, props)) = let
@@ -234,3 +339,52 @@ fun navigateTo' [] _ = NONE
     else navigateTo (SOME tree) target
 
 end;
+
+fun go () = let
+
+fun dropUntil tk s = let
+  val lines = String.fields (fn x => x = tk) s
+  in String.concatWith (String.str tk) (tl lines) end
+
+fun toString (s: string frag list) = let
+  val lines = String.concat (map (fn QUOTE s => dropUntil #")" s | ANTIQUOTE s => s) s)
+  in dropUntil #"\n" lines end
+val periodN = "^periodN"
+Quote s = toString:
+  ALL_TAC
+  \\ (ARITH_TAC)
+End
+
+(* fun get_binding s = let
+  exception Ret of thminfo
+  in
+    (Theory.upd_binding s (fn i => raise Ret i); NONE)
+    handle Ret i => SOME i | HOL_ERR _ => NONE
+  end
+Theory.current_theory()
+get_binding "foo" *)
+
+val _ = HOL_IDE.initialize {
+  wrapTactics = true,
+  filename = "foo",
+  text = "Theorem foo: foo\nProof"^s^"QED\n",
+  parseError = fn _ => fn _ => (),
+  holParseTree = fn _ => (),
+  tacticBlock = fn x => (PolyML.print x; ())
+} {
+  compile = false,
+  compilerOut = fn _ => (),
+  error = fn _ => (),
+  mlParseTree = fn _ => (),
+  progress = fn _ => (),
+  runtimeExn = fn _ => (),
+  toplevelOut = fn _ => ()
+};
+
+(* val foo = TotalDefn.located_qDefine (DB_dtype.mkloc ("foo", 2, true)) "foo" `foo=1` NONE;
+Theory.upd_binding "foo" (PolyML.print) ;
+Theory.upd_binding "foo" (PolyML.print o DB_dtype.updsrcloc (K (DB_dtype.mkloc ("foo", 1, true))) o PolyML.print) ; *)
+in () end;
+(*
+Timeout.apply (Time.fromMilliseconds 1000) go ();
+*)

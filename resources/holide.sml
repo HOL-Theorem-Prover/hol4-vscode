@@ -25,7 +25,7 @@ val initialize:
     filename: string,
     parseError: int * int -> string -> unit,
     holParseTree: HolLex.UserDeclarations.decl -> unit,
-    tacticBlock: int * int * (int * int * substring) tac_expr -> unit
+    tacticBlock: int * int * (int * int) tac_expr -> unit
   } ->
   { compile: bool,
     compilerOut: string -> unit,
@@ -60,7 +60,14 @@ type error =
 type subtree = PolyML.parseTree option
 type trees = PolyML.parseTree list
 
-fun prelude () = Tactical.set_prover (fn (t, _) => mk_oracle_thm "fast_proof" ([], t))
+fun prelude () = let
+  fun f (t, _) = mk_oracle_thm "fast_proof" ([], t)
+  fun f2 g = (
+    if current_theory () = "scratch"
+    then HOL_WARNING "HOL_IDE" "prove" "calling prove before new_theory"
+    else Tactical.set_prover f;
+    f g)
+  in Tactical.set_prover f2 end
 
 fun postPrelude () = ()
 
@@ -139,7 +146,7 @@ fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlo
         val _ = if isTac andalso wrapTactics then
           app aux [") ", Int.toString stop', ")"]
         else ()
-        in (start', stop', Substring.substring (body, start, stop - start)) end
+        in (start', stop') end
       open TacticParser
       fun repair _ s = if s = "" then () else (
         parseError (!pos, !pos) ("missing '"^s^"' inserted");

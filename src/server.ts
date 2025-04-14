@@ -38,7 +38,7 @@ export class HolServer {
 
     sendRaw(text: string) {
         if (this.child) {
-            // console.log(`send ${JSON.stringify(text)}\n${text}`);
+            // log(`send ${JSON.stringify(text)}\n${text}`);
             this.child?.stdin?.write(text);
         }
     }
@@ -51,7 +51,7 @@ export class HolServer {
             cwd: this.cwd,
             detached: true,
         });
-        // console.log(`starting server ${this.child.pid}`);
+        // log(`starting server ${this.child.pid}`);
         const asyncBuffer: string[] = [];
         function parse(s: string): any {
             try {
@@ -60,7 +60,7 @@ export class HolServer {
         }
         this.child.stdio[3]?.addListener('data', (data: Buffer) => {
             if (!data.length) return;
-            // console.log(`recv async:\n${JSON.stringify(data.toString())}`);
+            // log(`recv async:\n${JSON.stringify(data.toString())}`);
             let i = data.indexOf(0);
             if (i >= 0) {
                 asyncBuffer.push(data.toString(undefined, undefined, i));
@@ -87,7 +87,7 @@ export class HolServer {
         this.child?.addListener('exit', onKilled);
         this.child?.stdout?.on('data', (data: Buffer) => {
             if (!data.length) return;
-            // console.log(`recv stdout:\n${JSON.stringify(data.toString())}`);
+            // log(`recv stdout:\n${JSON.stringify(data.toString())}`);
             if (data.readUint8(data.length - 1) === 0) {
                 if (this.stderrBuffer.length) {
                     console.warn('stderr: ' + this.stderrBuffer.join('').replace(/\n/g, '\nstderr: '));
@@ -95,7 +95,7 @@ export class HolServer {
                 }
                 this.stdoutBuffer.push(data.toString(undefined, undefined, data.length - 1));
                 if (!this.receiver) {
-                    // console.log(`got message but no one is listening:\n${JSON.stringify(
+                    // log(`got message but no one is listening:\n${JSON.stringify(
                     //     this.stdoutBuffer.join('')
                     // )}`);
                 } else if (this.isErr) {
@@ -110,7 +110,7 @@ export class HolServer {
         });
         this.child?.stderr?.on('data', (data: Buffer) => {
             if (!data.length) return;
-            // console.log(`recv stderr:\n${JSON.stringify(data.toString())}`);
+            // log(`recv stderr:\n${JSON.stringify(data.toString())}`);
             const s = data.toString();
             if (s.includes('error:')) this.isErr = true;
             const nl = s.lastIndexOf('\n');
@@ -149,7 +149,7 @@ export class HolServer {
 
 
     send(...s: string[]) {
-        // console.log(`send:\n${JSON.stringify(s.join(''))}`);
+        // log(`send:\n${JSON.stringify(s.join(''))}`);
         s.push('\0'); this.sendRaw(s.join(''));
 
     }
@@ -166,7 +166,7 @@ export class HolServer {
 
     stop() {
         if (this.child?.pid) {
-            // console.log(`killing server ${this.child.pid}`);
+            // log(`killing server ${this.child.pid}`);
             process.kill(this.child.pid, 'SIGTERM');
         }
         this.onKilled();
@@ -181,14 +181,14 @@ export class HolServer {
 
     interrupt() {
         if (this.child?.pid) {
-            // console.log(`interrupting server ${this.child.pid}`);
+            // log(`interrupting server ${this.child.pid}`);
             process.kill(this.child.pid, 'SIGINT');
         }
     }
 
     sync() {
         if (this.child && (this.child.killed || !this.child.pid || this.child?.exitCode != null)) {
-            // console.log(`mystery death of server`);
+            // log(`mystery death of server`);
             this.onKilled();
         }
     }

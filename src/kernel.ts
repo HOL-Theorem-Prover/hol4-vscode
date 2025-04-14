@@ -96,7 +96,7 @@ export class HolKernel {
 
     sendRaw(text: string) {
         if (this.child) {
-            // console.log(`send ${JSON.stringify(text)}\n${text}`);
+            // log(`send ${JSON.stringify(text)}\n${text}`);
             this.child?.stdin?.write(text);
         } else {
             error(`HOL session is not started`);
@@ -167,7 +167,7 @@ export class HolKernel {
             cwd: this.cwd,
             detached: true,
         });
-        // console.log(`starting kernel ${this.child.pid}`);
+        // log(`starting kernel ${this.child.pid}`);
         this.executionOrder = 0;
         const pid = this.child.pid;
         const onKilled = () => { if (pid === this.child?.pid) this.onKilled() };
@@ -179,7 +179,7 @@ export class HolKernel {
             const listenerStderr = (data: Buffer) => {
                 if (!data.length) return;
                 buffer.push(data.toString());
-                // console.log(`start recv err ${data.toString()}`);
+                // log(`start recv err ${data.toString()}`);
                 const s = buffer.join('');
                 this.overflowListener.fire({ s, err: true });
                 buffer.length = 0;
@@ -189,16 +189,16 @@ export class HolKernel {
                 if (!data.length) return;
                 if (data.readUint8(data.length - 1) === 0) {
                     buffer.push(data.toString(undefined, undefined, data.length - 1));
-                    // console.log(`start recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
+                    // log(`start recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
                     this.child?.stdout?.off('data', listenerStdout);
                     this.child?.stderr?.off('data', listenerStderr);
                     this.finishOpen(buffer.join(''));
                     const files = ['vscodeBase.sml']
-                        .map(f => this.context.asAbsolutePath(path.join('src', f)))
+                        .map(f => this.context.asAbsolutePath(path.join('resources', f)))
                         .map(file => `val _ = use ${escapeMLString(file)};\n`);
                     this.request(files.join('')).then(_ => resolve());
                 } else {
-                    // console.log(`start recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
+                    // log(`start recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
                     buffer.push(data.toString());
                 }
             }
@@ -223,10 +223,10 @@ export class HolKernel {
             if (!data.length) return;
             if (data.readUint8(data.length - 1) === 0) {
                 this.appendOutput(data.toString(undefined, undefined, data.length - 1));
-                // console.log(`recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
+                // log(`recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
                 this.finish();
             } else {
-                // console.log(`recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
+                // log(`recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
                 this.appendOutput(data.toString());
             }
         });
@@ -238,7 +238,7 @@ export class HolKernel {
 
     stop() {
         if (this.child?.pid) {
-            // console.log(`killing kernel ${this.child.pid}`);
+            // log(`killing kernel ${this.child.pid}`);
             process.kill(this.child.pid, 'SIGTERM');
         }
         this.onKilled();
@@ -260,13 +260,13 @@ export class HolKernel {
 
     private onKilled() {
         this.cancelAll();
-        // console.log(`releasing kernel ${this.child?.pid}`);
+        // log(`releasing kernel ${this.child?.pid}`);
         this.child = undefined;
     }
 
     interrupt() {
         if (this.child?.pid) {
-            // console.log(`interrupting kernel ${this.child.pid}`);
+            // log(`interrupting kernel ${this.child.pid}`);
             process.kill(this.child.pid, 'SIGINT');
         }
         this.cancelAll();
@@ -274,7 +274,7 @@ export class HolKernel {
 
     sync() {
         if (this.child && (this.child.killed || !this.child.pid || this.child?.exitCode != null)) {
-            // console.log(`mystery death of kernel ${this.child.pid}`);
+            // log(`mystery death of kernel ${this.child.pid}`);
             this.onKilled();
         }
     }

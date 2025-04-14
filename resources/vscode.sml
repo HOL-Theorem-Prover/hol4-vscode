@@ -186,10 +186,10 @@ fun parseFile _ = NONE
 end *)
 
 type parse_data =
-  int * PolyML.parseTree list *
+  int list * PolyML.parseTree list *
   ((int * int) * (int * int) * Preterm.preterm * Pretype.Env.t) list *
   ((int * int) * HolParser.Simple.decl * (int * int) TacticParser.tac_expr) list
-val emptyParseData: parse_data = (0, [], [], [])
+val emptyParseData: parse_data = ([], [], [], [])
 
 val filename = ref ""
 val currentThread = ref 0
@@ -330,7 +330,7 @@ fun setFileContents text = let
         print ",\"body\":"; encodeJsonString s print;
         print "}")),
       progress = fn i => printToAsyncChannel id (fn print => (
-        case !trees of (_, ts, qs, ds) => trees := (i, ts, qs, ds);
+        case !trees of (cks, ts, qs, ds) => trees := (i :: cks, ts, qs, ds);
         print "{\"kind\":\"compileProgress\"";
         print ",\"pos\":"; encodeJsonPosLC lines i print;
         print "}")),
@@ -339,7 +339,7 @@ fun setFileContents text = let
       runtimeExn = fn e =>
         printError true
           (case PolyML.Exception.exceptionLocation e of
-            NONE => (fn i => (i, i)) (#1 (!trees))
+            NONE => (case #1 (!trees) of [] => (0,0) | i::_ => (i,i))
           | SOME {startPosition, endPosition, ...} => (startPosition, endPosition))
           (exceptionMessage e),
       mlParseTree = fn t => case !trees of (p, ts, qs, ds) => trees := (p, t :: ts, qs, ds)
@@ -515,22 +515,15 @@ end
 
 fun getState startTarget endTarget = let
   val state = case !currentCompilation of
-      SOME ((ref (stop, trees, ds, _), (text, lines)), _) =>
-      if stop > 0 then let
-        val offset = fromLineCol lines endTarget
-        in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
-      else NONE
-    | NONE => NONE
-  val state = case state of
-      NONE => let
-      val ((stop, trees, ds, _), (text, lines)) = !lastTrees
-      in
-        if stop > 0 then let
-          val offset = fromLineCol lines endTarget
-          in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
-        else NONE
-      end
-    | state => state
+      SOME ((ref (stop::_, trees, ds, _), (text, lines)), _) => let
+      val offset = fromLineCol lines endTarget
+      in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
+    | _ => NONE
+  val state = case (state, !lastTrees) of
+      (NONE, ((stop::_, trees, ds, _), (text, lines))) => let
+      val offset = fromLineCol lines endTarget
+      in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
+    | (state, _) => state
   in
     case state of
       NONE => NONE

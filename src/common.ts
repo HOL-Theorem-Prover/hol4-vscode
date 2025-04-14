@@ -1,15 +1,31 @@
-import { workspace } from 'vscode';
+import { DocumentSelector, OutputChannel, window, workspace } from 'vscode';
 export const EXTENSION_ID = 'oskarabrahamsson.hol4-mode';
 export const KERNEL_ID = 'hol4';
 
+export const hol4selector: DocumentSelector = {
+    scheme: 'file',
+    language: KERNEL_ID
+};
+
+let stderrOutput: OutputChannel;
+let firstError = true;
+
 /** Log a message with the 'hol-mode' prefix. */
 export function log(message: string): void {
-    console.log(`--- hol-mode: ${message}`);
+    stderrOutput = stderrOutput || window.createOutputChannel('HOL: Editor');
+    stderrOutput.appendLine(message);
+    // console.log(`--- hol-mode: ${message}`);
 }
 
 /** Log an error with the 'hol-mode' prefix. */
 export function error(message: string): void {
-    console.error(`!!! hol-mode: Error: ${message}`);
+    stderrOutput = stderrOutput || window.createOutputChannel('HOL: Editor');
+    stderrOutput.appendLine(`Error: ${message}`);
+    if (firstError) {
+        stderrOutput.show(true);
+        firstError = false;
+    }
+    // console.error(`!!! hol-mode: Error: ${message}`);
 }
 
 export function holdir(): string | undefined {

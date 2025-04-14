@@ -136,7 +136,7 @@ export class HOLIDE {
             ].map(f => path.join(holPath, f)),
             ...[
                 'tacticParser.sml', 'holide.sml', 'vscodeBase.sml', 'vscode.sml', 'setup.sml'
-            ].map(f => context.asAbsolutePath(path.join('src', f))),
+            ].map(f => context.asAbsolutePath(path.join('resources', f))),
         ]) {
             this.prelude += `val _ = use ${escapeMLString(file)};\n`;
         }
@@ -433,7 +433,7 @@ export class HOLIDE {
 
     async compileDocument(server: HolServer, document: vscode.TextDocument): Promise<void> {
         if (server.lastVersion != document.version) {
-            console.log(Date.now(), `setFileContents`);
+            // log(`${Date.now()} setFileContents`);
             this.diagState[document.uri.toString()] = [];
             await server.setFileContents(document.getText(), document.version);
         }

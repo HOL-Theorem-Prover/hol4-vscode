@@ -2,7 +2,7 @@
     "name": "hol4-mode",
     "displayName": "HOL4 mode",
     "description": "A VSCode extension for interacting with the HOL4 theorem prover",
-    "version": "0.0.17",
+    "version": "0.0.18",
     "repository": "https://github.com/oskarabrahamsson/hol4-vscode",
     "engines": {
         "vscode": "^1.75.0"
@@ -53,6 +53,12 @@
             {
                 "command": "hol4-mode.interrupt",
                 "title": "Interrupt HOL process",
+                "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.input.convert",
+                "title": "Input: Convert Current Abbreviation",
+                "description": "Converts the current abbreviation (e.g. \\lam).",
                 "category": "HOL"
             },
             {
@@ -164,6 +170,12 @@
             }
         ],
         "keybindings": [
+            {
+                "command": "hol4-mode.input.convert",
+                "key": "tab",
+                "mac": "tab",
+                "when": "editorTextFocus && hol4-mode.input.isActive"
+            },
             {
                 "command": "hol4-mode.startSession",
                 "key": "ctrl+h h",

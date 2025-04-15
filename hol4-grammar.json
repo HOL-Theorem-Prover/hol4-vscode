@@ -52,7 +52,7 @@
     },
     "ml-control": {
       "name": "keyword.control.ml",
-      "match": "\\b(if|then|else|raise|handle|case|of|while|before)\\b"
+      "match": "\\b(if|then|else|raise|handle|case|of|while|before|andalso|orelse)\\b"
     },
     "ml-operator": {
       "name": "keyword.operator.ml",
@@ -170,7 +170,7 @@
       "patterns": [{ "include": "#hol-term" }]
     },
     "definition": {
-      "begin": "^(Definition)\\s+([\\w_']*)(\\[([^\\]]*)\\])?(:)",
+      "begin": "^(Definition)\\s+([\\w_']*)(\\[([^\\]]*)\\])?\\s*(:)",
       "end": "^(Termination|End)",
       "beginCaptures": {
         "1": { "name": "keyword.other.definition.hol" },
@@ -191,7 +191,7 @@
       "patterns": [{ "include": "#non-standard-ml" }]
     },
     "inductive": {
-      "begin": "^((?:Co)?Inductive)\\s+([\\w_']*)(:)",
+      "begin": "^((?:Co)?Inductive)\\s+([\\w_']*)\\s*(:)",
       "end": "^End",
       "beginCaptures": {
         "1": { "name": "keyword.other.inductive.hol" },
@@ -211,7 +211,7 @@
       }
     },
     "theorem-proof": {
-      "begin": "^(Theorem|Triviality)\\s+([\\w_']*)(\\[([^\\]]*)\\])?(:)",
+      "begin": "^(Theorem|Triviality)\\s+([\\w_']*)(\\[([^\\]]*)\\])?\\s*(:)",
       "end": "^Proof",
       "beginCaptures": {
         "1": { "name": "keyword.other.theorem.hol" },

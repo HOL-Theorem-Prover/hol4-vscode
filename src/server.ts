@@ -95,9 +95,7 @@ export class HolServer {
                 }
                 this.stdoutBuffer.push(data.toString(undefined, undefined, data.length - 1));
                 if (!this.receiver) {
-                    // log(`got message but no one is listening:\n${JSON.stringify(
-                    //     this.stdoutBuffer.join('')
-                    // )}`);
+                    // log(`got message but no one is listening:\n${JSON.stringify(this.stdoutBuffer.join(''))}`);
                 } else if (this.isErr) {
                     this.receiver.reject();
                 } else {

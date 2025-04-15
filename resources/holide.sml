@@ -61,6 +61,9 @@ type subtree = PolyML.parseTree option
 type trees = PolyML.parseTree list
 
 fun prelude () = let
+  val _ = PolyML.Compiler.reportUnreferencedIds := true
+  val _ = PolyML.Compiler.printInAlphabeticalOrder := false
+  val _ = PolyML.Compiler.maxInlineSize := 80
   fun f (t, _) = mk_oracle_thm "fast_proof" ([], t)
   fun f2 g = (
     if current_theory () = "scratch"
@@ -99,7 +102,7 @@ fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlo
       val body = Substring.concat $ C map chunks (fn
           RegularChunk (_, ss) => ss
         | FlatChunk (_, ss) => ss
-        | EofChunk => Substring.full "")
+        | EOFChunk => Substring.full "")
       val inbox = ref chunks
       fun pushN n start = if n = 0 then start else
         case !inbox of
@@ -134,14 +137,13 @@ fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlo
       val blockPos = ref 0
       val pos = ref start
       fun tr i = (pos := pushN (i - !blockPos) (!pos); blockPos := i; !pos)
-      val tacs = ref []
       fun f isTac (start, stop) = let
         val start' = tr start
         val _ = if isTac andalso wrapTactics then
           app aux ["(VSCode.wrapTactic ", Int.toString start', " ("]
         else ()
-        in (start, start', stop) end
-      fun g isTac (start, start', stop) = let
+        in (start', stop) end
+      fun g isTac (start', stop) = let
         val stop' = tr stop
         val _ = if isTac andalso wrapTactics then
           app aux [") ", Int.toString stop', ")"]
@@ -212,7 +214,7 @@ fun pass2 chunks
     | EOF of int
   fun toState start = fn
       EOFChunk => EOF start
-    | chunk as RegularChunk (base, ss) => let
+    | RegularChunk (base, ss) => let
       val (s, lo, len) = Substring.base ss
       in Reading ((base, true), lo, lo + len, s) end
     | FlatChunk (i, ss) => let
@@ -229,10 +231,9 @@ fun pass2 chunks
         curToken := toState (if #2 base then #1 base + hi else #1 base) (readChunk ());
         if lo+1 = hi then SOME (String.sub (s, lo)) else read2 ())
   fun getOffset () = case !curToken of
-      Reading ((base, reg), lo, hi, s) => if reg then base + lo else base
+      Reading ((base, reg), lo, _, _) => if reg then base + lo else base
     | EOF pos => pos
   val serial = ref 1
-  val result = ref []
   fun ptFn NONE = ()
     | ptFn (SOME pt) = mlParseTree pt
   fun codeFn NONE () = ()
@@ -241,7 +242,7 @@ fun pass2 chunks
       fun enter f = app (f PolyML.globalNameSpace)
       in enter #enterFix fixes; enter #enterType types; enter #enterSig signatures;
          enter #enterStruct structures; enter #enterFunct functors; enter #enterVal values end
-  val print' = print
+  (* val print' = print *)
   open PolyML open Compiler
   val parameters = (if compile then [] else noCompile) @ [
     CPOutStream compilerOut,
@@ -256,10 +257,10 @@ fun pass2 chunks
     case !curToken of
       EOF _ => ()
     | _ => ((PolyML.compiler (read2, parameters) () handle e => runtimeExn e); loop ()))
-  fun printInput ls =
+  (* fun printInput ls =
     case read2 () of
       SOME c => printInput (c :: ls)
-    | NONE => (print' $ String.implode (rev ls); ())
+    | NONE => (print' $ String.implode (rev ls); ()) *)
   (* fun loop () = printInput [] *)
   in loop () end;
 
@@ -356,7 +357,7 @@ fun dropUntil tk s = let
 fun toString (s: string frag list) = let
   val lines = String.concat (map (fn QUOTE s => dropUntil #")" s | ANTIQUOTE s => s) s)
   in dropUntil #"\n" lines end
-val periodN = "^periodN"
+(* val periodN = "^periodN" *)
 Quote s = toString:
   ALL_TAC
   \\ (ARITH_TAC)

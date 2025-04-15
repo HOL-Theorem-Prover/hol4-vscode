@@ -468,8 +468,6 @@ local
   fun leLC (l,c) (l',c') = l <= l' andalso (l <> l' orelse c <= c')
   fun fixup a NONE = a
     | fixup a (SOME b) = if #1 a = #1 b then a else b
-  fun dest_near (locn.Loc_Near loc) = dest_near loc
-    | dest_near loc = loc
 in
   fun navigateTo' startTarget endTarget = let
     fun navigateToTy ty fail =
@@ -553,14 +551,6 @@ fun getHoverInfo startTarget endTarget =
     NONE => print "[]"
   | SOME (text, lines, _, trees, tm, pt) => let
     fun process loc props = let
-      fun validate str = let
-        fun look [] = false
-          | look (PolyML.PTstructureAt {file, ...} :: props) = let
-            val basename = String.extract (file, lastIndexOf #"/" file + 1, NONE)
-            val stem = String.extract (basename, 0, SOME (lastIndexOf #"." basename))
-            in str = stem andalso look props end
-          | look (_ :: props) = look props
-        in look props end
       fun fromProps [] out = out
         | fromProps (PolyML.PTtype ty :: props) (isId, _) = fromProps props (isId, SOME ty)
         | fromProps (PolyML.PTrefId i :: props) (_, ty) = fromProps props (SOME i, ty)
@@ -590,10 +580,10 @@ fun getHoverInfo startTarget endTarget =
             handle _ => []
           val isGlobalId = i = 0 orelse let
             fun look [] = NONE
-              | look (PolyML.PTdeclaredAt loc :: props) = SOME loc
+              | look (PolyML.PTdeclaredAt loc :: _) = SOME loc
               | look (_ :: props) = look props
             fun lookRefs [] = false
-              | lookRefs (PolyML.PTreferences (exp, loc) :: props) = exp
+              | lookRefs (PolyML.PTreferences (exp, _) :: _) = exp
               | lookRefs (_ :: props) = lookRefs props
             in
               case look props of
@@ -664,6 +654,7 @@ fun gotoDefinition target =
           errormonad.Some (_, ty) => (let
             val {Thy, Tyop, ...} = Type.dest_thy_type ty
             (* TODO *)
+            val _ = (loc, Thy, Tyop)
             in [] end
             handle HOL_ERR _ => [])
         | _ => [])
@@ -697,7 +688,7 @@ fun gotoDefinition target =
         | _ => [])
       | _ => []
     fun fromProps [] r = r
-      | fromProps (PolyML.PTdeclaredAt loc :: rest) (file, ty, _) = (file, ty, SOME loc)
+      | fromProps (PolyML.PTdeclaredAt loc :: _) (file, ty, _) = (file, ty, SOME loc)
       | fromProps (PolyML.PTstructureAt {file,...} :: props) (_, ty, df) =
         fromProps props (SOME file, ty, df)
       | fromProps (PolyML.PTtype ty :: props) (file, _, df) = fromProps props (file, SOME ty, df)
@@ -759,7 +750,7 @@ fun selectTacticSeq startTarget endTarget = let
     val ls = sliceTacticBlock startOffset endOffset false sp e
     in if List.all null ls then NONE else SOME (printFragsAsE text ls) end
   fun findProof [] = NONE
-    | findProof (((start, stop), decl, tree) :: ds) =
+    | findProof (((start, stop), _, tree) :: ds) =
       if start > startOffset then findProof ds else
       if stop < endOffset then NONE else build (start, stop) tree
   val _ = case findProof ds of

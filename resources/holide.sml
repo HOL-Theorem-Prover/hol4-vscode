@@ -67,7 +67,6 @@ type subtree = PolyML.parseTree option
 type trees = PolyML.parseTree list
 
 fun prelude () = let
-  val _ = PolyML.Compiler.reportUnreferencedIds := true
   val _ = PolyML.Compiler.printInAlphabeticalOrder := false
   val _ = PolyML.Compiler.maxInlineSize := 80
   fun f (t, _) = mk_oracle_thm "fast_proof" ([], t)
@@ -78,7 +77,7 @@ fun prelude () = let
     f g)
   in Tactical.set_prover f2 end
 
-fun postPrelude () = ()
+fun postPrelude () = PolyML.Compiler.reportUnreferencedIds := true
 
 datatype chunk
   = RegularChunk of int * substring

@@ -115,7 +115,7 @@ fun pullChunks {
         | FlatChunk (_, ss) => ss
         | EOFChunk => Substring.full "")
       val inbox = ref chunks
-      fun pushN n start = if n = 0 then start else
+      fun pushN n start =
         case !inbox of
           (chunk as RegularChunk (base, ss)) :: rest => let
           val (_, lo, len) = Substring.base ss
@@ -124,13 +124,14 @@ fun pullChunks {
               queue := chunk :: !queue;
               inbox := rest;
               pushN (n - len) (base + lo + len))
+            else if n = 0 then base + lo
             else let
               val (ss1, ss2) = Substring.splitAt (ss, n)
               val _ = queue := RegularChunk (base, ss1) :: !queue
               val _ = inbox := RegularChunk (base, ss2) :: rest
               in base + lo + n end
           end
-        | (chunk as FlatChunk (i, ss)) :: rest =>let
+        | (chunk as FlatChunk (i, ss)) :: rest => let
           val len = Substring.size ss
           val start = Option.getOpt (i, start)
           in
@@ -138,6 +139,7 @@ fun pullChunks {
               queue := chunk :: !queue;
               inbox := rest;
               pushN (n - len) start)
+            else if n = 0 then start
             else let
               val (ss1, ss2) = Substring.splitAt (ss, n)
               val _ = queue := FlatChunk (i, ss1) :: !queue

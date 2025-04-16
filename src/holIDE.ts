@@ -336,6 +336,11 @@ export class HOLIDE {
             .filter((entry) => entry.file === document.uri.path);
     }
 
+    tryServer(document: vscode.TextDocument): HolServer | undefined {
+        const uri = document.uri.toString();
+        return this.servers[uri];
+    }
+
     server(document: vscode.TextDocument): HolServer {
         const uri = document.uri.toString();
         const s = this.servers[uri];

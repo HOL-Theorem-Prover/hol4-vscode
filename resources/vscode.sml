@@ -782,27 +782,19 @@ fun gotoDefinition target =
   | _ => print "[]"
 
 fun selectTacticSeq startTarget endTarget = let
-  val state = case !currentCompilation of
-    SOME ((ref {tacticParse = ds as ((_, stop), _, _) :: _, ...}, (text, lines)), _) => let
-    val offset = fromLineCol lines endTarget
-    in if offset <= stop then SOME (text, lines, ds) else NONE end
-  | _ => NONE
-  val (text, lines, ds) = case state of
-    NONE => let
-    val ({tacticParse = ds, ...}, (text, lines)) = !lastTrees
-    in (text, lines, ds) end
-  | SOME state => state
-  val startOffset = fromLineCol lines startTarget
-  val endOffset = fromLineCol lines startTarget
-  open TacticParse2
-  fun build sp e = let
-    val ls = sliceTacticBlock startOffset endOffset false sp e
-    in if List.all null ls then NONE else SOME (printFragsAsE text ls) end
-  fun findProof [] = NONE
-    | findProof (((start, stop), _, tree) :: ds) =
-      if start > startOffset then findProof ds else
-      if stop < endOffset then NONE else build (start, stop) tree
-  val _ = case findProof ds of
+  val result = case getStateBasic startTarget endTarget of
+    NONE => NONE
+  | SOME (text, _, {startOffset, endOffset}, {tacticParse, ...}) => let
+    open TacticParse2
+    fun build sp e = let
+      val ls = sliceTacticBlock startOffset endOffset false sp e
+      in if List.all null ls then NONE else SOME (printFragsAsE text ls) end
+    fun findProof [] = NONE
+      | findProof (((start, stop), _, tree) :: ds) =
+        if start > startOffset then findProof ds else
+        if stop < endOffset then NONE else build (start, stop) tree
+    in findProof tacticParse end
+  val _ = case result of
     NONE => print "null"
   | SOME s => encodeJsonString s print
   in () end

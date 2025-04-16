@@ -212,6 +212,11 @@ export class HolServer {
         return this.requestJSON(`val _ = VSCode.gotoDefinition (${line}, ${col})`);
     }
 
+    selectTacticSeq([[sline, scol], [eline, ecol]]: Location): Promise<string | null> {
+        return this.requestJSON(
+            `val _ = VSCode.selectTacticSeq (${sline}, ${scol}) (${eline}, ${ecol})`);
+    }
+
     utf8ToPosition(pos: Position): vscode.Position {
         return this.lineCounts.utf8ToPosition(pos);
     }

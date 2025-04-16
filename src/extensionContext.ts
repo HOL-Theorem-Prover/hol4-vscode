@@ -392,15 +392,28 @@ export class HOLExtensionContext implements
     }
 
     /** Send a tactic to the terminal. */
-    async sendTactic(editor: vscode.TextEditor) {
+    async sendTactic(editor: vscode.TextEditor, line = true) {
         if (!this.isActive()) {
             return;
         }
 
-        let tacticText = getSelection(editor);
-        tacticText = processTactics(tacticText);
-        const text = `proofManagerLib.e(${tacticText})`;
-        const full = addLocationPragma(text, editor.selection.start);
+        const server = this.holIDE?.tryServer(editor.document);
+        let text: string = '';
+        let full: string = '';
+        for (const selection of editor.selections) {
+            let text1: string | null = null;
+            const range = line && selection.isEmpty
+                ? new vscode.Range(selection.start.line, 0, selection.start.line + 1, 0)
+                : selection;
+            if (server) text1 = await server.selectTacticSeq(server.rangeToUtf8(range));
+            if (text1 === null) {
+                let tacticText = getSelection(editor);
+                tacticText = processTactics(tacticText);
+                text1 = `proofManagerLib.e(${tacticText})`;
+            }
+            text += text1;
+            full += addLocationPragma(text1, selection.start);
+        }
 
         await this.notebook!.send(text, false, true, full);
     }

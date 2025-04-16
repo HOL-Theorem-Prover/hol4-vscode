@@ -4,9 +4,7 @@ import { log, error, EXTENSION_ID, KERNEL_ID } from './common';
 import { HolNotebook } from './notebook';
 import { HOLIDE, entryToCompletionItem, entryToSymbol, isAccessibleEntry } from './holIDE';
 
-/**
- * Generate a HOL lexer location pragma from a vscode Position value.
- */
+/** Generate a HOL lexer location pragma from a vscode Position value. */
 function positionToLocationPragma(pos: vscode.Position): string {
     return `(*#loc ${pos.line + 1} ${pos.character} *)`;
 }
@@ -22,9 +20,7 @@ function getSelection(editor: vscode.TextEditor): string {
         : document.getText(selection);
 }
 
-/**
- * Adds a location pragma to the text at the given position.
- */
+/** Adds a location pragma to the text at the given position. */
 function addLocationPragma(text: string, position: vscode.Position) {
     const locPragma = positionToLocationPragma(position);
     const trace = '"show_typecheck_errors"';
@@ -84,9 +80,7 @@ function processTactics(text: string): string {
     return text.trim().replace(tacticalBegin, '$2').replace(tacticalEnd, '$2');
 }
 
-/**
- * Select a chunk of text delimited by `init` and `stop` in the editor `editor`.
- */
+/** Select a chunk of text delimited by `init` and `stop` in the editor `editor`. */
 function selectBetween(editor: vscode.TextEditor, init: RegExp, stop: RegExp): vscode.Selection | undefined {
     const selection = editor.selection;
     const document = editor.document;
@@ -214,7 +208,8 @@ export class HOLExtensionContext implements
         public holIDE?: HOLIDE
     ) { }
 
-    /** Returns whether the current session is active. If it is not active, then
+    /**
+     * Returns whether the current session is active. If it is not active, then
      * an error message is printed.
      */
     isActive(): boolean {
@@ -233,9 +228,7 @@ export class HOLExtensionContext implements
         }
     }
 
-    /**
-     * Start HOL terminal session.
-     */
+    /** Start HOL terminal session. */
     async startSession(editor: vscode.TextEditor) {
         this.sync();
         if (this.notebook?.kernel.running) {
@@ -299,9 +292,7 @@ export class HOLExtensionContext implements
         log('Started session');
     }
 
-    /**
-     * Stop the HOL terminal session.
-     */
+    /** Stop the HOL terminal session. */
     stopSession() {
         if (!this.isActive()) {
             return;
@@ -311,18 +302,14 @@ export class HOLExtensionContext implements
         this.notebook!.close();
     }
 
-    /**
-     * Stop the HOL terminal session.
-     */
+    /** Stop the HOL terminal session. */
     restartSession(editor: vscode.TextEditor) {
         log('Restarted session');
         this.notebook?.stop();
         this.startSession(editor);
     }
 
-    /**
-     * Send interrupt signal to the HolTerminal.
-     */
+    /** Send interrupt signal to the HolTerminal. */
     interrupt() {
         if (!this.isActive()) {
             return;
@@ -366,9 +353,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send(text, true, true);
     }
 
-    /**
-     * Send a goal selection to the terminal.
-     */
+    /** Send a goal selection to the terminal. */
     async sendGoal(editor: vscode.TextEditor) {
         this.sync();
         if (!this.notebook?.kernel.running) {
@@ -388,9 +373,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send(faketext, false, true, full);
     }
 
-    /**
-     * Select a term quotation and set it up as a subgoal.
-     */
+    /** Select a term quotation and set it up as a subgoal. */
     async sendSubgoal(editor: vscode.TextEditor) {
         if (!this.isActive()) {
             return;
@@ -408,9 +391,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send(faketext, false, true, realtext);
     }
 
-    /**
-     * Send a tactic to the terminal.
-     */
+    /** Send a tactic to the terminal. */
     async sendTactic(editor: vscode.TextEditor) {
         if (!this.isActive()) {
             return;
@@ -424,26 +405,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send(text, false, true, full);
     }
 
-
-    /**
-     * Send a tactic line to the terminal.
-     */
-    async sendTacticLine(editor: vscode.TextEditor) {
-        if (!this.isActive()) {
-            return;
-        }
-
-        let tacticText = editor.document.lineAt(editor.selection.active.line).text;
-        tacticText = processTactics(tacticText);
-        const text = `proofManagerLib.e(${tacticText})`;
-        const full = addLocationPragma(text, editor.selection.start);
-
-        await this.notebook!.send(text, false, true, full);
-    }
-
-    /**
-     * Show current goal.
-     */
+    /** Show current goal. */
     async showCurrentGoal() {
         if (!this.isActive()) {
             return;
@@ -453,9 +415,7 @@ export class HOLExtensionContext implements
     }
 
 
-    /**
-     * Rotate goal.
-     */
+    /** Rotate goal. */
     async rotateGoal() {
         if (!this.isActive()) {
             return;
@@ -464,9 +424,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send('proofManagerLib.rotate 1', false, true);
     }
 
-    /**
-     * Step backwards goal.
-     */
+    /** Step backwards goal. */
     async stepbackGoal() {
         if (!this.isActive()) {
             return;
@@ -475,9 +433,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send('proofManagerLib.backup ()', false, true);
     }
 
-    /**
-     * Restart goal.
-     */
+    /** Restart goal. */
     async restartGoal() {
         if (!this.isActive()) {
             return;
@@ -486,9 +442,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send('proofManagerLib.restart ()', false, true);
     }
 
-    /**
-     * Drop goal.
-     */
+    /** Drop goal. */
     async dropGoal() {
         if (!this.isActive()) {
             return;
@@ -497,9 +451,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send('proofManagerLib.drop ()', false, true);
     }
 
-    /**
-     * Toggle printing of terms with or without types.
-     */
+    /** Toggle printing of terms with or without types. */
     async toggleShowTypes() {
         if (!this.isActive()) {
             return;
@@ -508,9 +460,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send('Globals.show_types := not (!Globals.show_types)', false, true);
     }
 
-    /**
-     * Toggle printing of theorem hypotheses.
-     */
+    /** Toggle printing of theorem hypotheses. */
     async toggleShowAssums() {
         if (!this.isActive()) {
             return;
@@ -518,9 +468,7 @@ export class HOLExtensionContext implements
         await this.notebook!.send('Globals.show_assums := not (!Globals.show_assums)', false, true);
     }
 
-    /**
-     * See {@link vscode.HoverProvider}.
-     */
+    /** See {@link vscode.HoverProvider}. */
     async provideHover(document: vscode.TextDocument, position: vscode.Position, _token: vscode.CancellationToken) {
         const results: vscode.MarkdownString[] = [];
         const sels = vscode.window.activeTextEditor?.selections;
@@ -549,9 +497,7 @@ export class HOLExtensionContext implements
         if (results) return new vscode.Hover(results, range ?? wordRange);
     }
 
-    /**
-     * See {@link vscode.DefinitionProvider}.
-     */
+    /** See {@link vscode.DefinitionProvider}. */
     async provideDefinition(
         document: vscode.TextDocument,
         position: vscode.Position,
@@ -574,9 +520,7 @@ export class HOLExtensionContext implements
         return defns;
     }
 
-    /**
-     * See {@link vscode.DocumentSymbolProvider}.
-     */
+    /** See {@link vscode.DocumentSymbolProvider}. */
     provideDocumentSymbols(
         document: vscode.TextDocument,
         _token: vscode.CancellationToken,
@@ -584,9 +528,7 @@ export class HOLExtensionContext implements
         return this.holIDE?.documentEntries(document).map(entryToSymbol);
     }
 
-    /**
-     * See {@link vscode.WorkspaceSymbolProvider<T>}.
-     */
+    /** See {@link vscode.WorkspaceSymbolProvider<T>}. */
     provideWorkspaceSymbols(
         query: string,
         _token: vscode.CancellationToken,
@@ -601,9 +543,7 @@ export class HOLExtensionContext implements
         return symbols;
     }
 
-    /**
-     * See {@link vscode.CompletionItemProvider}.
-     */
+    /** See {@link vscode.CompletionItemProvider}. */
     provideCompletionItems(
         document: vscode.TextDocument,
         position: vscode.Position,

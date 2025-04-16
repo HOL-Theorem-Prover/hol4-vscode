@@ -87,11 +87,6 @@
                 "category": "HOL"
             },
             {
-                "command": "hol4-mode.sendTacticLine",
-                "title": "Send tactic line",
-                "category": "HOL"
-            },
-            {
                 "command": "hol4-mode.proofmanShow",
                 "title": "Show current goal",
                 "category": "HOL"
@@ -222,12 +217,6 @@
                 "command": "hol4-mode.sendTactic",
                 "key": "ctrl+h e",
                 "mac": "cmd+h e",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.sendTacticLine",
-                "key": "ctrl+h ctrl+e",
-                "mac": "cmd+h ctrl+e",
                 "when": "editorLangId == hol4"
             },
             {

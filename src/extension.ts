@@ -103,11 +103,6 @@ export function activate(context: vscode.ExtensionContext) {
             holExtensionContext?.sendTactic(editor);
         }),
 
-        // Send a tactic line to the terminal.
-        vscode.commands.registerTextEditorCommand('hol4-mode.sendTacticLine', (editor) => {
-            holExtensionContext?.sendTacticLine(editor);
-        }),
-
         // Show goal.
         vscode.commands.registerCommand('hol4-mode.proofmanShow', () => {
             holExtensionContext?.showCurrentGoal();

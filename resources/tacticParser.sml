@@ -1,4 +1,4 @@
-structure TacticParser = struct
+structure TacticParse2 = struct
 local
 val infixes =
   map (fn x => (x, 0, false)) ["++", "&&", "|->", "THEN", "THEN1",
@@ -911,9 +911,8 @@ fun sliceTacticBlock start stop sliceClose sp e = let
 end
 end;
 
-open TacticParser;
-
 fun go a b () = let
+open TacticParse2
 
 fun dropUntil tk s = let
   val lines = String.fields (fn x => x = tk) s
@@ -922,7 +921,7 @@ fun dropUntil tk s = let
 fun toString (s: string frag list) = let
   val lines = String.concat (map (fn QUOTE s => dropUntil #")" s | ANTIQUOTE s => s) s)
   in dropUntil #"\n" lines end
-val periodN = "^periodN"
+(* val periodN = "^periodN" *)
 Quote s = toString:
   \\ qsuff_tac
      ‘circ_mod (set area) (set (eval_io (age 1 env) ins))
@@ -937,7 +936,7 @@ Quote s = toString:
 End
 
 (* val _ = PolyML.print $ parseSMLSimple s; *)
-fun f t (a,b) = (t,a,b,Substring.substring (s, a, b-a))
+(* fun f t (a,b) = (t,a,b,Substring.substring (s, a, b-a)) *)
 val tac = parseTacticBlock s;
 (* val _ = print $ printTacsAsE s [tac]; *)
 (* val l = PolyML.print $ linearize (K false) tac;

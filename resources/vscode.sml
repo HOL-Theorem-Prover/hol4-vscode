@@ -185,11 +185,34 @@ fun encodeJsonSection _ _ = raise Bind
 fun parseFile _ = NONE
 end *)
 
-type parse_data =
-  int list * PolyML.parseTree list *
-  ((int * int) * (int * int) * Preterm.preterm * Pretype.Env.t) list *
-  ((int * int) * HolParser.Simple.decl * (int * int) TacticParser.tac_expr) list
-val emptyParseData: parse_data = ([], [], [], [])
+type chunk_data = {
+  mlParseTree: PolyML.parseTree list,
+  typecheck: ((int * int) * (int * int) * Preterm.preterm * Pretype.Env.t) list
+}
+val emptyChunkData: chunk_data = {mlParseTree = [], typecheck = []}
+
+fun addMLParseTree d {mlParseTree, typecheck} =
+  {mlParseTree = d :: mlParseTree, typecheck = typecheck}
+fun addTypecheck d {mlParseTree, typecheck} =
+  {mlParseTree = mlParseTree, typecheck = d :: typecheck}
+
+type parse_data = {
+  snaps: (HOL_IDE.snapshot * chunk_data) list,
+  chunk: chunk_data,
+  tacticParse: ((int * int) * HolParser.Simple.decl * (int * int) TacticParse2.tac_expr) list
+}
+val emptyParseData: parse_data = {snaps = [], chunk = emptyChunkData, tacticParse = []}
+fun parseEnd ((snap, _)::_) = HOL_IDE.snapPos snap
+  | parseEnd _ = 0
+
+fun setSnaps snaps ({snaps = _, chunk = _, tacticParse}:parse_data): parse_data =
+  {snaps = snaps, chunk = emptyChunkData, tacticParse = tacticParse}
+fun addSnap s ({snaps, chunk, tacticParse}:parse_data): parse_data =
+  {snaps = (s, chunk) :: snaps, chunk = emptyChunkData, tacticParse = tacticParse}
+fun addToChunk f ({snaps, chunk, tacticParse}:parse_data): parse_data =
+  {snaps = snaps, chunk = f chunk, tacticParse = tacticParse}
+fun addTacticParse d ({snaps, chunk, tacticParse}:parse_data): parse_data =
+  {snaps = snaps, chunk = chunk, tacticParse = d :: tacticParse}
 
 val filename = ref ""
 val currentThread = ref 0
@@ -280,10 +303,10 @@ val _ = Listener.add_listener Preterm.typecheck_listener ("vscode", fn (ptm, env
     SOME ((trees, _), _) =>
     (case get_locn (Preterm.locn ptm) of
       SOME (start, stop) =>
-      (case !trees of (p, ts, qs, ds) => trees := (p, ts, (start, stop, ptm, env) :: qs, ds))
+      trees := addToChunk (addTypecheck (start, stop, ptm, env)) (!trees)
     | _ => ())
   | _ => ())
-  handle Listener.DUP _ =>
+  handle HOL_ERR _ =>
     !WARNING_outstream "<<warning: failed to add typecheck listener>>\n"
 
 fun setFileContents text = let
@@ -291,7 +314,7 @@ fun setFileContents text = let
       SOME ((trees, text), thread) => (
       Thread.interrupt thread;
       currentCompilation := NONE;
-      case !trees of (_, [], _, _) => () | trees => lastTrees := (trees, text))
+      case #mlParseTree (#chunk (!trees)) of [] => () | _ => lastTrees := (!trees, text))
     | NONE => ()
   val lines = mkLineCounter text
   val trees = ref emptyParseData
@@ -303,10 +326,13 @@ fun setFileContents text = let
       print ",\"msg\":"; encodeJsonPretty msg print;
       print "}"))
     open HolParser.Simple
+    val prevText = case !lastTrees of
+      ({snaps = [], ...}, _) => NONE
+    | ({snaps, ...}, (text, _)) => SOME (text, snaps)
     val lastHolTree = ref (HolParser.Simple.Chunk 0)
     (* fun addq q = case !trees of (p, ts, qs) => trees := (p, ts, q :: qs) *)
     val _ = PolyML.print_depth 100
-    val _ = HOL_IDE.initialize {
+    val _ = HOL_IDE.initialize {prevText = prevText} {
       wrapTactics = false,
       filename = !filename,
       text = text,
@@ -317,8 +343,7 @@ fun setFileContents text = let
         print "}")),
       holParseTree = fn t => lastHolTree := t,
       tacticBlock = fn (start, stop, t) =>
-        case !trees of (p, ts, qs, ds) =>
-          trees := (p, ts, qs, ((start, stop), !lastHolTree, t) :: ds)
+        trees := addTacticParse ((start, stop), !lastHolTree, t) (!trees)
     } {
       compile = true,
       compilerOut = fn s => printToAsyncChannel id (fn print => (
@@ -329,20 +354,32 @@ fun setFileContents text = let
         print "{\"kind\":\"toplevelOut\"";
         print ",\"body\":"; encodeJsonString s print;
         print "}")),
-      progress = fn i => printToAsyncChannel id (fn print => (
-        case !trees of (cks, ts, qs, ds) => trees := (i :: cks, ts, qs, ds);
-        print "{\"kind\":\"compileProgress\"";
-        print ",\"pos\":"; encodeJsonPosLC lines i print;
-        print "}")),
+      skipTo = fn snaps => let
+        val _ = trees := setSnaps snaps (!trees)
+        val pos = parseEnd snaps
+        in
+          if pos > 0 then
+            printToAsyncChannel id (fn print => (
+              print "{\"kind\":\"compileSkip\"";
+              print ",\"pos\":"; encodeJsonPosLC lines pos print;
+              print "}"))
+          else ()
+        end,
+      progress = fn snap => (
+        trees := addSnap snap (!trees);
+        printToAsyncChannel id (fn print => (
+          print "{\"kind\":\"compileProgress\"";
+          print ",\"pos\":"; encodeJsonPosLC lines (HOL_IDE.snapPos snap) print;
+          print "}"))),
       error = fn {hard, location = {startPosition, endPosition, ...}, message, ...} =>
         printError hard (startPosition, endPosition) message,
       runtimeExn = fn e =>
         printError true
           (case PolyML.Exception.exceptionLocation e of
-            NONE => (case #1 (!trees) of [] => (0,0) | i::_ => (i,i))
+            NONE => (fn i => (i,i)) $ parseEnd $ #snaps (!trees)
           | SOME {startPosition, endPosition, ...} => (startPosition, endPosition))
           (exceptionMessage e),
-      mlParseTree = fn t => case !trees of (p, ts, qs, ds) => trees := (p, t :: ts, qs, ds)
+      mlParseTree = fn t => trees := addToChunk (addMLParseTree t) (!trees)
     }
     val _ = lastTrees := (!trees, (text, lines))
     val _ = currentCompilation := NONE
@@ -511,26 +548,38 @@ in
     in navigateTo' end
 end
 
-fun getState startTarget endTarget = let
+fun getStateBasic startTarget endTarget = let
   val state = case !currentCompilation of
-      SOME ((ref (stop::_, trees, ds, _), (text, lines)), _) => let
+      SOME ((ref (data as {snaps, ...}), (text, lines)), _) => let
       val offset = fromLineCol lines endTarget
-      in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
+      in if offset <= parseEnd snaps then SOME (text, lines, offset, data) else NONE end
     | _ => NONE
   val state = case (state, !lastTrees) of
-      (NONE, ((stop::_, trees, ds, _), (text, lines))) => let
+      (NONE, (data as {snaps, ...}, (text, lines))) => let
       val offset = fromLineCol lines endTarget
-      in if offset <= stop then SOME (text, lines, offset, trees, ds) else NONE end
+      in if offset <= parseEnd snaps then SOME (text, lines, offset, data) else NONE end
     | (state, _) => state
   in
     case state of
       NONE => NONE
-    | SOME (text, lines, endOffset, trees, ds) => let
-      val offset = {startOffset = fromLineCol lines startTarget, endOffset = endOffset}
-      val ds = (navigateTo' startTarget endTarget ds)
-      val pt = HOL_IDE.navigateTo' trees offset
-      in SOME (text, lines, offset, trees, ds, pt) end
+    | SOME (text, lines, endOffset, data) => let
+      val startOffset = fromLineCol lines startTarget
+      val offset = {startOffset = startOffset, endOffset = endOffset}
+      in SOME (text, lines, offset, data) end
   end
+
+fun getState startTarget endTarget =
+  case getStateBasic startTarget endTarget of
+    NONE => NONE
+  | SOME (text, lines, offset as {startOffset, ...}, {snaps, chunk, ...}) => let
+    fun navigateChunks _ [] chunk = chunk
+      | navigateChunks startOffset ((snap, c1)::rest) chunk =
+        if HOL_IDE.snapPos snap <= startOffset then chunk
+        else navigateChunks startOffset rest c1
+    val {mlParseTree, typecheck, ...} = navigateChunks startOffset snaps chunk
+    val ds = navigateTo' startTarget endTarget typecheck
+    val pt = HOL_IDE.navigateTo' mlParseTree offset
+    in SOME (text, lines, offset, mlParseTree, ds, pt) end
 
 fun getBinding s = let
   exception Ret of thminfo
@@ -734,18 +783,18 @@ fun gotoDefinition target =
 
 fun selectTacticSeq startTarget endTarget = let
   val state = case !currentCompilation of
-    SOME ((ref (_, _, _, ds as ((_, stop), _, _) :: _), (text, lines)), _) => let
+    SOME ((ref {tacticParse = ds as ((_, stop), _, _) :: _, ...}, (text, lines)), _) => let
     val offset = fromLineCol lines endTarget
     in if offset <= stop then SOME (text, lines, ds) else NONE end
   | _ => NONE
   val (text, lines, ds) = case state of
     NONE => let
-    val ((_, _, _, ds), (text, lines)) = !lastTrees
+    val ({tacticParse = ds, ...}, (text, lines)) = !lastTrees
     in (text, lines, ds) end
   | SOME state => state
   val startOffset = fromLineCol lines startTarget
   val endOffset = fromLineCol lines startTarget
-  open TacticParser
+  open TacticParse2
   fun build sp e = let
     val ls = sliceTacticBlock startOffset endOffset false sp e
     in if List.all null ls then NONE else SOME (printFragsAsE text ls) end

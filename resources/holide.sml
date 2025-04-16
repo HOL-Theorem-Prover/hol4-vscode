@@ -10,6 +10,7 @@ let (* autoconf-like hack *)
 *)
 structure HOL_IDE: sig
 
+val noCompile: PolyML.Compiler.compilerParameters list
 type error =
   {context: PolyML.pretty option, hard: bool, location: PolyML.location, message: PolyML.pretty}
 
@@ -19,18 +20,23 @@ type trees = PolyML.parseTree list
 val prelude: unit -> unit
 val postPrelude: unit -> unit
 
+type snapshot
+val snapPos: snapshot -> int
+
 val initialize:
+  { prevText: (string * (snapshot * 'a) list) option } ->
   { wrapTactics: bool,
     text: string,
     filename: string,
     parseError: int * int -> string -> unit,
     holParseTree: HolLex.UserDeclarations.decl -> unit,
-    tacticBlock: int * int * (int * int) tac_expr -> unit
+    tacticBlock: int * int * (int * int) TacticParse2.tac_expr -> unit
   } ->
   { compile: bool,
     compilerOut: string -> unit,
     toplevelOut: string -> unit,
-    progress: int -> unit,
+    skipTo: (snapshot * 'a) list -> unit,
+    progress: snapshot -> unit,
     error: error -> unit,
     runtimeExn: exn -> unit,
     mlParseTree: PolyML.parseTree -> unit
@@ -79,7 +85,13 @@ datatype chunk
   | FlatChunk of int option * substring
   | EOFChunk
 
-fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlock} = let
+type snapshot = int * int
+val snapPos = fst
+
+fun pullChunks {
+  wrapTactics, text, filename,
+  parseError, holParseTree, tacticBlock
+} skipTo = let
   val sr = ref text
   val queue = ref []
   fun push chunk = queue := chunk :: !queue
@@ -149,7 +161,7 @@ fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlo
           app aux [") ", Int.toString stop', ")"]
         else ()
         in (start', stop') end
-      open TacticParser
+      open TacticParse2
       fun repair _ s = if s = "" then () else (
         parseError (!pos, !pos) ("missing '"^s^"' inserted");
         aux s)
@@ -177,30 +189,41 @@ fun pullChunks {wrapTactics, text, filename, parseError, holParseTree, tacticBlo
   fun pull () = (
     queue := [];
     case feed () of
-      HolParser.Simple.TopDecl d => (false, (
+      HolParser.Simple.TopDecl d => (
       holParseTree d;
       pos := doDecl true (!pos) d;
-      case d of
+      if !pos < skipTo then pull () else
+      (false, case d of
         HolParser.Simple.DefinitionDecl {termination = SOME {decls, ...}, ...} =>
         reparseTacticBlock decls
       | HolParser.Simple.TheoremDecl {body, ...} => reparseTacticBlock body
       | _ => rev (!queue)))
     | HolParser.Simple.EOF p =>
-      (regular (!pos, p); finishThmVal (); pos := p; (true, rev (!queue))))
+      (regular (!pos, p); finishThmVal (); pos := p;
+       (true, if p < skipTo then [] else rev (!queue))))
   in pull end
 
-fun pass1 args = let
-  val pull = pullChunks args
+fun pass1 {prevText} (args as {text, ...}) = let
+  val (firstDiff, snaps) = case prevText of
+    NONE => (0, [])
+  | SOME (oldText, snaps) => let
+    val stop = Int.min (size text, size oldText)
+    fun findDiff i =
+      if i = stop orelse String.sub (text, i) <> String.sub (oldText, i) then i
+      else findDiff (i + 1)
+    in (findDiff 0, snaps) end
+  val pull = pullChunks args 0(*firstDiff*)
   fun loop ls = case pull () of
     (false, q) => loop (q :: ls)
   | (true, q) => rev (q :: ls)
-  in loop [] end
+  in (firstDiff, snaps, loop []) end
 
-fun pass2 chunks
-  {compile, compilerOut, toplevelOut, progress, error, runtimeExn, mlParseTree} = let
-
+fun pass2 (firstDiff, snaps, chunks) {
+  compile, compilerOut, toplevelOut,
+  skipTo, progress, error, runtimeExn, mlParseTree
+} = let
   val queue = ref []
-  val chunks = ref $ PolyML.print chunks
+  val chunks = ref chunks
   fun readChunk () =
     case !queue of
       s :: rest => (queue := rest; s)
@@ -209,30 +232,60 @@ fun pass2 chunks
         [] => EOFChunk
       | q :: rest => (queue := q; chunks := rest; readChunk ())
 
-  datatype State
-    = Reading of (int * bool) * int * int * string
-    | EOF of int
-  fun toState start = fn
-      EOFChunk => EOF start
+  datatype state
+    = Reading of (int * int * bool) * int * int * string
+    | EOF of int * int
+
+  fun statePos (Reading ((base, mlBase, reg), lo, _, _)) =
+      (if reg then base + lo else base, mlBase + lo)
+    | statePos (EOF pos) = pos
+
+  val mlDiff = if firstDiff = 0 then 0 else let
+    fun findSnap [] = 0
+      | findSnap (((pos, mlPos), _)::snaps) =
+        if pos < firstDiff then
+          if mlPos = 0 then 0 else (skipTo snaps; mlPos)
+        else findSnap snaps
+    in findSnap snaps end
+  fun skipToState (start, mlStart) = fn
+      EOFChunk => EOF (start, mlStart)
     | RegularChunk (base, ss) => let
       val (s, lo, len) = Substring.base ss
-      in Reading ((base, true), lo, lo + len, s) end
+      in
+        if mlStart + len <= mlDiff then skipToState (base + lo + len, mlStart + len) (readChunk ())
+        else Reading ((base, mlStart - lo, true), mlDiff - (mlStart - lo), lo + len, s)
+      end
     | FlatChunk (i, ss) => let
       val (s, lo, len) = Substring.base ss
-      in Reading ((Option.getOpt (i, start), false), lo, lo + len, s) end
-  val curToken = ref (toState 0 (readChunk ()))
+      val base = Option.getOpt (i, start)
+      in
+        if mlStart + len <= mlDiff then skipToState (base + len, mlStart + len) (readChunk ())
+        else Reading ((base, mlStart - lo, false), mlDiff - (mlStart - lo), lo + len, s)
+      end
+
+  val curToken = ref (skipToState (0, 0) (readChunk ()))
+
+  fun toState (start, mlStart) = fn
+      EOFChunk => EOF (start, mlStart)
+    | RegularChunk (base, ss) => let
+      val (s, lo, len) = Substring.base ss
+      in Reading ((base, mlStart - lo, true), lo, lo + len, s) end
+    | FlatChunk (i, ss) => let
+      val (s, lo, len) = Substring.base ss
+      in Reading ((Option.getOpt (i, start), mlStart - lo, false), lo, lo + len, s) end
+
   fun read2 () =
     case !curToken of
       EOF _ => NONE
     | Reading (base, lo, hi, s) =>
       if lo+1 < hi then
         (curToken := Reading (base, lo+1, hi, s); SOME (String.sub(s, lo)))
-      else (
-        curToken := toState (if #2 base then #1 base + hi else #1 base) (readChunk ());
-        if lo+1 = hi then SOME (String.sub (s, lo)) else read2 ())
-  fun getOffset () = case !curToken of
-      Reading ((base, reg), lo, _, _) => if reg then base + lo else base
-    | EOF pos => pos
+      else let
+        val (base, mlBase, reg) = base
+        val _ = curToken :=
+          toState (if reg then base + hi else base, mlBase + hi) (readChunk ())
+        in if lo+1 = hi then SOME (String.sub (s, lo)) else read2 () end
+  fun getOffset () = statePos (!curToken)
   val serial = ref 1
   fun ptFn NONE = ()
     | ptFn (SOME pt) = mlParseTree pt
@@ -249,7 +302,7 @@ fun pass2 chunks
     CPPrintStream toplevelOut,
     CPErrorMessageProc error,
     CPCompilerResultFun (fn (pt, code) => (ptFn pt; codeFn code)),
-    CPLineOffset getOffset,
+    CPLineOffset (fst o getOffset),
     CPPrintInAlphabeticalOrder false,
     CPBindingSeq (fn () => (fn n => n before serial := n + 1) (!serial))];
   fun loop () = (
@@ -264,7 +317,7 @@ fun pass2 chunks
   (* fun loop () = printInput [] *)
   in loop () end;
 
-val initialize = pass2 o pass1
+fun initialize prev = pass2 o pass1 prev
 
 fun moveUp NONE = NONE
   | moveUp (SOME (_, props)) = let
@@ -362,7 +415,7 @@ Quote s = toString:
   ALL_TAC
   \\ (ARITH_TAC)
 End
-
+val _ = s
 (* fun get_binding s = let
   exception Ret of thminfo
   in
@@ -373,6 +426,8 @@ Theory.current_theory()
 get_binding "foo" *)
 
 val _ = HOL_IDE.initialize {
+  prevText = NONE
+} {
   wrapTactics = true,
   filename = "foo",
   text = "Theorem foo: foo\nProof"^s^"QED\n",
@@ -382,6 +437,7 @@ val _ = HOL_IDE.initialize {
 } {
   compile = false,
   compilerOut = fn _ => (),
+  skipTo = fn _ => (),
   error = fn _ => (),
   mlParseTree = fn _ => (),
   progress = fn _ => (),

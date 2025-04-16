@@ -87,7 +87,7 @@ export class HolServer {
         this.child?.addListener('exit', onKilled);
         this.child?.stdout?.on('data', (data: Buffer) => {
             if (!data.length) return;
-            // log(`recv stdout:\n${JSON.stringify(data.toString())}`);
+            // log(`recv stdout:\n${(data.toString())}`);
             if (data.readUint8(data.length - 1) === 0) {
                 if (this.stderrBuffer.length) {
                     console.warn('stderr: ' + this.stderrBuffer.join('').replace(/\n/g, '\nstderr: '));

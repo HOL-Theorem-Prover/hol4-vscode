@@ -18,6 +18,10 @@ export type ErrorMessage = {
     pos: Location,
     msg: string,
 };
+export type CompileSkipMessage = {
+    kind: 'compileSkip',
+    pos: Position,
+};
 export type CompileProgressMessage = {
     kind: 'compileProgress',
     pos: Position,
@@ -30,7 +34,7 @@ export type InterruptedMessage = {
 };
 
 export type Message = CompilerOutMessage | ToplevelOutMessage | ErrorMessage |
-    CompileProgressMessage | CompileCompletedMessage | InterruptedMessage;
+    CompileSkipMessage | CompileProgressMessage | CompileCompletedMessage | InterruptedMessage;
 
 export type PrettyString = string;
 

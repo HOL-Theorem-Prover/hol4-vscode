@@ -350,9 +350,14 @@ export class HOLIDE {
                 switch (e.kind) {
                     case 'compilerOut':
                     case 'toplevelOut': log(e.body); break;
+                    case 'compileSkip':
                     case 'compileProgress':
                         if (e.pos[0] || e.pos[1]) {
                             progress = server.utf8ToPosition(e.pos);
+                            if (e.kind == 'compileSkip') {
+                                newDiags.push(...(this.diags.get(document.uri) ?? [])
+                                    .filter(diag => diag.range.end.isBefore(progress!)));
+                            }
                             dirty = true;
                         }
                         break;

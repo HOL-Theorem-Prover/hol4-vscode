@@ -164,7 +164,9 @@ fun pullChunks {
       fun repair _ s = if s = "" then () else (
         parseError (!pos, !pos) ("missing '"^s^"' inserted");
         aux s)
-      val () = tacticBlock (start, stop, mapTacExpr (f, g, repair) $ parseTacticBlock body)
+      val () = tacticBlock (start, stop,
+        mapTacExpr {start = f, stop = g, repair = repair} $
+        parseTacticBlock body)
       in queue := List.revAppend (!inbox, !queue) end
     fun goMid [] acc _ = acc
       | goMid (chunk :: chunks) acc after =

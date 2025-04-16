@@ -1,23 +1,139 @@
-structure TacticParse2 = struct
-local
+signature TacticParse2 =
+sig
+
+type 'a delim = int * int * 'a
+datatype expr
+  = EmptyE
+  | ParenE of expr delim * bool
+  | TupleE of expr delim list * bool
+  | ListE of expr delim list * bool
+  | IdentE of string
+  | OpaqueE
+  | InfixE of expr delim * string delim * expr delim
+  | AppE of expr delim list
+
+val getPrec: expr -> int
+
+val parseSMLSimple: string -> int * int * expr
+
+datatype 'a tac_expr
+  = Then of 'a tac_expr list
+  | ThenLT of 'a tac_expr * 'a tac_expr list
+  | Subgoal of 'a
+  | First of 'a tac_expr list
+  | Try of 'a tac_expr
+  | Repeat of 'a tac_expr
+  | MapEvery of 'a * 'a tac_expr list
+  | MapFirst of 'a * 'a tac_expr list
+  | Rename of 'a
+  | Opaque of int * 'a
+
+  | LThen of 'a tac_expr * 'a tac_expr list
+  | LThenLT of 'a tac_expr list
+  | LThen1 of 'a tac_expr
+  | LTacsToLT of 'a tac_expr
+  | LNullOk of 'a tac_expr
+  | LFirst of 'a tac_expr list
+  | LSelectGoal of 'a
+  | LSelectGoals of 'a
+  | LAllGoals of 'a tac_expr
+  | LNthGoal of 'a tac_expr * 'a
+  | LLastGoal of 'a tac_expr
+  | LHeadGoal of 'a tac_expr
+  | LSplit of 'a * 'a tac_expr * 'a tac_expr
+  | LReverse
+  | LTry of 'a tac_expr
+  | LRepeat of 'a tac_expr
+  | LSelectThen of 'a tac_expr * 'a tac_expr
+  | LOpaque of int * 'a
+
+  | List of 'a * 'a tac_expr list
+  | Group of bool * 'a * 'a tac_expr
+  | RepairEmpty of bool * 'a * string
+  | RepairGroup of 'a * string * 'a tac_expr * string
+  | OOpaque of int * 'a
+
+val isTac: 'a tac_expr -> bool
+val topSpan: 'a tac_expr -> 'a option
+
+val parseTacticBlock: string -> (int * int) tac_expr
+
+val mapTacExpr:
+  { start: bool -> 'a -> 'b, stop: bool -> 'b -> 'c,
+    repair: 'a -> string -> unit } ->
+  'a tac_expr -> 'c tac_expr
+
+val printTacsAsE: string -> (int * int) tac_expr list -> string
+
+datatype tac_frag_open
+  = FOpen
+  | FOpenThen1
+  | FOpenFirst
+  | FOpenRepeat
+  | FOpenTacsToLT
+  | FOpenNullOk
+  | FOpenNthGoal of int * int
+  | FOpenLastGoal
+  | FOpenHeadGoal
+  | FOpenSplit of int * int
+  | FOpenSelect
+
+datatype tac_frag_mid
+  = FNextFirst
+  | FNextTacsToLT
+  | FNextSplit
+  | FNextSelect
+
+datatype tac_frag_close
+  = FClose
+  | FCloseFirst
+  | FCloseRepeat
+
+datatype tac_frag
+  = FFOpen of tac_frag_open
+  | FFMid of tac_frag_mid
+  | FFClose of tac_frag_close
+  | FAtom of (int * int) tac_expr
+  | FGroup of (int * int) * tac_frag list
+  | FBracket of
+    tac_frag_open * tac_frag list * tac_frag_close * (int * int) tac_expr
+  | FMBracket of
+    tac_frag_open * tac_frag_mid * tac_frag_close *
+    tac_frag list list * (int * int) tac_expr
+
+val linearize: ((int * int) tac_expr -> bool) ->
+  (int * int) tac_expr -> tac_frag list
+
+val unlinearize: tac_frag list -> (int * int) tac_expr
+
+val printFragsAsE: string -> tac_frag list list -> string
+
+val sliceTacticBlock:
+  int -> int -> bool -> int * int -> (int * int) tac_expr -> tac_frag list list
+
+end
+structure TacticParse2 :> TacticParse2 =
+struct
+
+open Lib
+
+type 'a delim = int * int * 'a
+datatype expr
+  = EmptyE
+  | ParenE of expr delim * bool
+  | TupleE of expr delim list * bool
+  | ListE of expr delim list * bool
+  | IdentE of string
+  | OpaqueE
+  | InfixE of expr delim * string delim * expr delim
+  | AppE of expr delim list
+
 val infixes =
   map (fn x => (x, 0, false)) ["++", "&&", "|->", "THEN", "THEN1",
     "THENL", "THEN_LT", "THENC", "ORELSE", "ORELSE_LT", "ORELSEC", "THEN_TCL",
     "ORELSE_TCL", "?>", "|>", "|>>", "||>", "||->",
     ">>", ">-", ">|", "\\\\", ">>>", ">>-", "??", ">~", ">>~", ">>~-"] @
   [("by", 8, false), ("suffices_by", 8, false), ("$", 1, true)]
-in
-
-type 'a delim = int * int * 'a
-datatype expr =
-  EmptyE
-| ParenE of expr delim * bool
-| TupleE of expr delim list * bool
-| ListE of expr delim list * bool
-| IdentE of string
-| OpaqueE
-| InfixE of expr delim * string delim * expr delim
-| AppE of expr delim list
 
 fun getPrec EmptyE = 10
   | getPrec (ParenE _) = 10
@@ -171,7 +287,7 @@ fun parseSMLSimple body = let
     | _ => lhs
   and tail2 prec rhs =
     case peekInfix () of
-      (start, SOME (_, prec', rassoc)) =>
+      (_, SOME (_, prec', rassoc)) =>
       if prec' + (if rassoc then 1 else 0) > prec then
         tail2 prec (tail (prec + (if prec' > prec then 1 else 0)) rhs)
       else rhs
@@ -183,42 +299,42 @@ fun parseSMLSimple body = let
     (start, opaqueDelimited [#"\000"], OpaqueE)
   in e end
 
-datatype 'a tac_expr =
-  Then of 'a tac_expr list
-| ThenLT of 'a tac_expr * 'a tac_expr list
-| Subgoal of 'a
-| First of 'a tac_expr list
-| Try of 'a tac_expr
-| Repeat of 'a tac_expr
-| MapEvery of 'a * 'a tac_expr list
-| MapFirst of 'a * 'a tac_expr list
-| Rename of 'a
-| Opaque of int * 'a
+datatype 'a tac_expr
+  = Then of 'a tac_expr list
+  | ThenLT of 'a tac_expr * 'a tac_expr list
+  | Subgoal of 'a
+  | First of 'a tac_expr list
+  | Try of 'a tac_expr
+  | Repeat of 'a tac_expr
+  | MapEvery of 'a * 'a tac_expr list
+  | MapFirst of 'a * 'a tac_expr list
+  | Rename of 'a
+  | Opaque of int * 'a
 
-| LThen of 'a tac_expr * 'a tac_expr list
-| LThenLT of 'a tac_expr list
-| LThen1 of 'a tac_expr
-| LTacsToLT of 'a tac_expr
-| LNullOk of 'a tac_expr
-| LFirst of 'a tac_expr list
-| LSelectGoal of 'a
-| LSelectGoals of 'a
-| LAllGoals of 'a tac_expr
-| LNthGoal of 'a tac_expr * 'a
-| LLastGoal of 'a tac_expr
-| LHeadGoal of 'a tac_expr
-| LSplit of 'a * 'a tac_expr * 'a tac_expr
-| LReverse
-| LTry of 'a tac_expr
-| LRepeat of 'a tac_expr
-| LSelectThen of 'a tac_expr * 'a tac_expr
-| LOpaque of int * 'a
+  | LThen of 'a tac_expr * 'a tac_expr list
+  | LThenLT of 'a tac_expr list
+  | LThen1 of 'a tac_expr
+  | LTacsToLT of 'a tac_expr
+  | LNullOk of 'a tac_expr
+  | LFirst of 'a tac_expr list
+  | LSelectGoal of 'a
+  | LSelectGoals of 'a
+  | LAllGoals of 'a tac_expr
+  | LNthGoal of 'a tac_expr * 'a
+  | LLastGoal of 'a tac_expr
+  | LHeadGoal of 'a tac_expr
+  | LSplit of 'a * 'a tac_expr * 'a tac_expr
+  | LReverse
+  | LTry of 'a tac_expr
+  | LRepeat of 'a tac_expr
+  | LSelectThen of 'a tac_expr * 'a tac_expr
+  | LOpaque of int * 'a
 
-| List of 'a * 'a tac_expr list
-| Group of bool * 'a * 'a tac_expr
-| RepairEmpty of bool * 'a * string
-| RepairGroup of 'a * string * 'a tac_expr * string
-| OOpaque of int * 'a
+  | List of 'a * 'a tac_expr list
+  | Group of bool * 'a * 'a tac_expr
+  | RepairEmpty of bool * 'a * string
+  | RepairGroup of 'a * string * 'a tac_expr * string
+  | OOpaque of int * 'a
 
 fun isTac (Then _) = true
   | isTac (ThenLT _) = true
@@ -393,7 +509,7 @@ val parseTacticBlock: string -> (int * int) tac_expr = let
 
   in simplify o parseSMLSimple end
 
-fun mapTacExpr (start, stop, repair) = let
+fun mapTacExpr {start, stop, repair} = let
   fun trF isTac a (f: unit -> 'd) = let
     val b = start isTac a
     val r = f ()
@@ -440,281 +556,7 @@ fun mapTacExpr (start, stop, repair) = let
     | go (OOpaque (prec, p)) = OOpaque (prec, tr false p)
   in go end
 
-structure Frag = struct
-
-val ERR = mk_HOL_ERR "Frag"
-
-datatype stash_kind =
-  Then1 of goal list
-| TacsToLT of goal list list * goal list
-| NthGoal of goal list * goal list
-
-datatype 'a handled = Running of 'a | Failed of exn
-
-fun mapHandled f (Running a) = (Running (f a) handle e as HOL_ERR _ => Failed e)
-  | mapHandled f (Failed e) = Failed e
-
-datatype goaltree =
-  Base of goal list
-| Parallel of goaltree list
-| Stashed of goaltree * stash_kind
-| Try of goaltree handled * goal list
-| Repeat of goaltree handled * (goal list -> goaltree handled) * goal list
-| Done of goal list
-
-fun apply1 f g (Base gs) = g gs
-  | apply1 f g (Parallel gs) = Parallel (map f gs)
-  | apply1 f g (Stashed (gs, k)) = Stashed (f gs, k)
-  | apply1 f g (Try (gs, k)) = Try (mapHandled f gs, k)
-  | apply1 f g (Repeat (gs, v, k)) = Repeat (mapHandled f gs, mapHandled f o v, k)
-  | apply1 f g (t as Done _) = t
-
-fun asBase (Base gs) = gs
-  | asBase _ = raise Bind
-
-fun apply f gs = apply1 (apply f) f gs
-
-fun applyN f 0 gs = f gs
-  | applyN f n gs = apply1 (applyN f (n-1)) (fn _ => raise Bind) gs
-
-fun then_tac (tac:tactic) (n, g) = (n, apply (fn gs =>
-  Base (List.concat (map (fst o tac) gs))) g)
-
-fun then_ltac (ltac:list_tactic) (n, g) = (n, apply (fn gs => Base (fst $ ltac gs)) g)
-fun then_open_paren (n, g) = (n+1, apply (fn gs => Parallel (map (Base o single) gs)) g)
-fun close_paren (n, g) = let
-  fun go (Base _) = raise Bind
-    | go (Parallel gs) = Base (List.concat (map asBase gs))
-    | go (Stashed (gs, k)) =
-      (case k of
-        Then1 ss =>
-        (case asBase gs of
-          [] => Base ss
-        | _ => raise ERR "THEN1" "first subgoal not solved by second tactic")
-      | TacsToLT (acc, []) => Base (List.concat $ rev acc)
-      | TacsToLT (acc, _) => raise ERR "TACS_TO_LT" "length mismatch"
-      | NthGoal (lo, hi) => Base (lo @ asBase gs @ hi))
-    | go (Try (Running gs, _)) = Base (asBase gs)
-    | go (Try (Failed e, _)) = PolyML.Exception.reraise e
-    | go (Repeat (Running gs, v, _)) = let
-      fun repeat gs = case v (asBase gs) of Failed _ => gs | Running gs => repeat gs
-      in repeat gs end
-    | go (Repeat (Failed _, _, gs)) = Base gs
-    | go (Done gs) = Base gs
-  in (n-1, applyN go (n-1) g) end
-
-fun open_then1 (n, g) = (n+1, apply (fn
-    [] => raise ERR "THEN1" "goal completely solved by first tactic"
-  | g::gs => Stashed (Base [g], Then1 gs)) g)
-
-fun open_first (n, g) = (n+1, apply (fn gs => Try (Running (Base gs), gs)) g)
-fun reopen_first (n, g) = let
-  fun go (Try (Running (Base gs), _)) = Done gs
-    | go (Try (Failed _, gs)) = Try (Running (Base gs), gs)
-    | go (Done gs) = Done gs
-    | go _ = raise Bind
-  in (n, applyN go (n-1) g) end
-
-fun close_try (n, g) = let
-  fun go (Try (Running gs, _)) = Base (asBase gs)
-    | go (Try (Failed _, gs)) = Base gs
-    | go _ = raise Bind
-  in (n-1, applyN go (n-1) g) end
-
-fun open_repeat (n, g) = (n+1, apply (fn gs => Repeat (Running $ Base gs, Running o Base, gs)) g)
-fun close_repeat (n, g) = let
-  fun go (Repeat (Running gs, v, _)) = let
-      fun repeat [] acc = acc
-        | repeat (g::gs) acc =
-          case v [g] of
-            Failed _ => repeat gs (g::acc)
-          | Running g' => repeat gs (repeat (asBase g') acc)
-      in Base $ rev $ repeat (asBase gs) [] end
-    | go (Repeat (Failed _, _, gs)) = Base gs
-    | go _ = raise Bind
-  in (n-1, applyN go (n-1) g) end
-
-fun open_tacs_to_lt (n, g) = (n+1, apply (fn
-    [] => raise ERR "TACS_TO_LT" "length mismatch"
-  | g::gs => Stashed (Base [g], TacsToLT ([], gs))) g)
-
-fun reopen_tacs_to_lt (n, g) = let
-  fun go (Stashed (_, TacsToLT (acc, []))) = raise ERR "TACS_TO_LT" "length mismatch"
-    | go (Stashed (gs, TacsToLT (acc, g::gs'))) =
-      Stashed (Base [g], TacsToLT (asBase gs :: acc, gs'))
-    | go _ = raise Bind
-  in (n, applyN go (n-1) g) end
-
-fun open_null_ok (n, g) = (n+1, apply (fn [] => Done [] | gs => Parallel [Base gs]) g)
-fun open_nth_goal i (n, g) = (n+1, apply (fn gs => let
-  val (lo, (g, hi)) = apsnd (valOf o List.getItem) $ Lib.split_after (i-1) gs
-    handle _ => raise ERR "NTH_GOAL" "no nth subgoal in list"
-  in Stashed (Base [g], NthGoal (lo, hi)) end) g)
-
-val open_head_goal = open_nth_goal 1
-fun open_last_goal i (n, g) = (n+1, apply (fn gs => let
-  val (lo, g) = front_last gs
-    handle _ => raise ERR "LAST_GOAL" "no subgoals"
-  in Stashed (Base [g], NthGoal (lo, [])) end) g)
-
-fun open_split_lt i (n, g) = (n+1, apply (fn gs => let
-  val (lo, hi) = Lib.split_after (if n >= 0 then n else length gs + n) gs
-    handle _ => raise ERR "LAST_GOAL" "no subgoals"
-  in Stashed (Base lo, NthGoal ([], hi)) end) g)
-fun reopen_split_lt (n, g) = let
-  fun go (Stashed (gs, NthGoal ([], hi))) = Stashed (Base hi, NthGoal (asBase gs, []))
-    | go _ = raise Bind
-  in (n, applyN go (n-1) g) end
-
-val open_select_lt = open_first o then_open_paren
-fun next_select_lt (n, g) = let
-  fun go [] success failed =
-      Stashed (Base (List.concat (rev success)), NthGoal ([], rev failed))
-    | go (Try (Running gs, _) :: rest) success failed = go rest (asBase gs :: success) failed
-    | go (Try (Failed _, [g]) :: rest) success failed = go rest success (g :: failed)
-    | go _ _ _ = raise Bind
-  in (n-1, applyN (fn Parallel gs => go gs [] [] | _ => raise Bind) (n-2) g) end
-
-end;
-
-datatype tac_frag_open =
-  FOpen
-| FOpenThen1
-| FOpenFirst
-| FOpenRepeat
-| FOpenTacsToLT
-| FOpenNullOk
-| FOpenNthGoal of int * int
-| FOpenLastGoal
-| FOpenHeadGoal
-| FOpenSplit of int * int
-| FOpenSelect
-
-datatype tac_frag_mid =
-  FNextFirst
-| FNextTacsToLT
-| FNextSplit
-| FNextSelect
-
-datatype tac_frag_close =
-  FClose
-| FCloseTry
-| FCloseRepeat
-
-datatype tac_frag =
-  FFOpen of tac_frag_open
-| FFMid of tac_frag_mid
-| FFClose of tac_frag_close
-| FAtom of (int * int) tac_expr
-| FGroup of (int * int) * tac_frag list
-| FBracket of tac_frag_open * tac_frag list * tac_frag_close * (int * int) tac_expr
-| FMBracket of
-  tac_frag_open * tac_frag_mid * tac_frag_close * tac_frag list list * (int * int) tac_expr
-
-fun linearize isAtom e = let
-  fun group a f (one, acc) = (fn (one, l) => (one, FGroup (a, rev l) :: acc)) (f (one, []))
-  fun span e = case topSpan e of NONE => I | SOME sp => group sp
-  fun goList [] acc = acc
-    | goList (e::ls) acc = goList ls (go e acc)
-  and go e (acc as (one, acc')) = if isAtom e then (false, FAtom e :: acc') else let
-    fun bracket2 stop f start (one, acc) = (false, FBracket (start, rev (snd (f one)), stop, e) :: acc)
-    val bracket = bracket2 FClose
-    fun mbracket stop mid start f (one, acc) =
-      (false, FMBracket (start, mid, stop, f one, e) :: acc)
-    fun asTac f (true, acc) = f (true, acc)
-      | asTac f acc = bracket (K $ f (true, [])) FOpen acc
-    val r = case e of
-      Then ls => goList ls acc
-    | ThenLT (e, ls) => asTac (goList ls o go e) acc
-    | First [] => (true, FAtom (First []) :: acc')
-    | First (e::ls) =>
-      asTac (mbracket FClose FNextFirst FOpenFirst (fn one =>
-        map (fn e => snd (go e (one, []))) (e::ls))) acc
-    | Try e => asTac (bracket2 FCloseTry (fn one => go e (one, [])) FOpenFirst) acc
-    | Repeat e => asTac (bracket2 FCloseRepeat (fn one => go e (one, [])) FOpenRepeat) acc
-    | MapEvery (_, []) => acc
-    | MapFirst (_, []) => (true, FAtom (First []) :: acc')
-    | LThenLT ls => goList ls acc
-    | LThen (e, ls) => goList ls $ go e acc
-    | LThen1 e => span e (bracket (fn _ => go e (true, [])) FOpenThen1) acc
-    | LTacsToLT (List (p, e::ls)) =>
-      group p (mbracket FClose FNextTacsToLT FOpenTacsToLT (fn one =>
-        map (fn e => snd (go e (true, []))) (e::ls))) acc
-    | LNullOk e => bracket (fn one => go e (one, [])) FOpenNullOk acc
-    | LFirst [] => (true, FAtom (LFirst []) :: acc')
-    | LFirst (e::ls) =>
-      mbracket FClose FNextFirst FOpenFirst (fn one =>
-        map (fn e => snd (go e (one, []))) (e::ls)) acc
-    | LAllGoals e => go e acc
-    | LNthGoal (e, n) => bracket (fn _ => go e (false, [])) (FOpenNthGoal n) acc
-    | LLastGoal e => bracket (fn _ => go e (false, [])) FOpenLastGoal acc
-    | LHeadGoal e => bracket (fn _ => go e (false, [])) FOpenHeadGoal acc
-    | LSplit (n, e1, e2) =>
-      mbracket FClose FNextSplit (FOpenSplit n) (fn _ =>
-        map (fn e => snd (go e (false, []))) [e1, e2]) acc
-    | LReverse => (one, FAtom LReverse :: acc')
-    | LTry e => bracket2 FCloseTry (fn one => go e (one, [])) FOpenFirst acc
-    | LRepeat e => bracket (fn one => go e (one, [])) FOpenRepeat acc
-    | LSelectThen (e1, e2) =>
-      mbracket FClose FNextSelect FOpenSelect (fn _ =>
-        map (fn f => snd (f (false, []))) [
-          go e1, span e2 $ bracket (fn _ => go e2 (false, [])) FOpen]) acc
-    | List _ => raise Bind
-    | RepairEmpty _ => acc
-    | Group       (_, p, e)    => group p (go e) acc
-    | RepairGroup (p, _, e, _) => group p (go e) acc
-    | LTacsToLT _    => (false, FAtom e :: acc')
-    | MapEvery _     => (false, FAtom e :: acc')
-    | MapFirst _     => (false, FAtom e :: acc')
-    | Rename _       => (false, FAtom e :: acc')
-    | Subgoal _      => (false, FAtom e :: acc')
-    | LSelectGoal _  => (false, FAtom e :: acc')
-    | LSelectGoals _ => (false, FAtom e :: acc')
-    | Opaque _       => (false, FAtom e :: acc')
-    | LOpaque _      => (false, FAtom e :: acc')
-    | OOpaque _      => (false, FAtom e :: acc')
-    in r end
-  in rev $ snd (go e (true, [])) end
-
-val unlinearize = let
-  fun go [] acc = acc
-    | go (FFOpen e :: l) (stk, acc) = go l ((e, acc) :: stk, [])
-    | go (FFMid e :: l) acc = raise Bind
-    | go (FFClose e :: l) acc = raise Bind
-    | go (FAtom a :: l) (s, acc) = go l (s, a :: acc)
-    | go (FGroup (_, e) :: l) acc = go l (go e acc)
-    | go (FBracket (_, _, _, a) :: l) (stk, acc) = go l (stk, a :: acc)
-    | go (FMBracket (_, _, _, _, a) :: l) (stk, acc) = go l (stk, a :: acc)
-  fun mkThen [] acc = Then (rev acc)
-    | mkThen (e :: l) acc =
-      if isTac e then mkThen l (e::acc) else mkThenL (Then (rev acc)) l [e]
-  and mkThenL lhs [] acc = ThenLT (lhs, rev acc)
-    | mkThenL lhs (e::l) acc =
-      if isTac e then mkThen l [e, ThenLT (lhs, rev acc)] else mkThenL lhs l (e::acc)
-  fun mkLThenL [] acc = LThenLT (rev acc)
-    | mkLThenL (e :: l) acc =
-      if isTac e then mkLThen (LThenLT (rev acc)) l [e] else mkLThenL l (e::acc)
-  and mkLThen lhs [] acc = ThenLT (lhs, rev acc)
-    | mkLThen lhs (e::l) acc =
-      if isTac e then mkLThen lhs l (e::acc) else mkLThenL l [e, LThen (lhs, rev acc)]
-  fun mkOpen FOpen acc = mkThen acc []
-    | mkOpen FOpenThen1 acc = LHeadGoal (mkThen acc [])
-    | mkOpen FOpenFirst acc = Try (mkThen acc [])
-    | mkOpen FOpenRepeat acc = Repeat (mkThen acc [])
-    | mkOpen FOpenTacsToLT acc = LHeadGoal (mkThen acc [])
-    | mkOpen FOpenNullOk acc = LNullOk (mkLThenL acc [])
-    | mkOpen (FOpenNthGoal n) acc = LNthGoal (mkThen acc [], n)
-    | mkOpen FOpenLastGoal acc = LLastGoal (mkThen acc [])
-    | mkOpen FOpenHeadGoal acc = LHeadGoal (mkThen acc [])
-    | mkOpen (FOpenSplit n) acc = LSplit (n, mkLThenL acc [], LThenLT [])
-    | mkOpen FOpenSelect acc = LAllGoals $ Try (mkThen acc [])
-  fun finish ([], acc) = mkThen (rev acc) []
-    | finish ((e, acc') :: stk, acc) =
-      finish (stk, mkOpen e (rev acc) :: acc')
-  in fn ls => finish $ go ls ([], []) end
-
-fun printTacsAsE s [] = ""
-  | printTacsAsE s (l::ls) = let
+fun printTacsAsE s ls = let
   datatype tree
     = TAtom of string
     | TOpaque of int * string
@@ -724,9 +566,8 @@ fun printTacsAsE s [] = ""
     | TTuple of tree list
   val mkTree = let
     fun sub (start, stop) = String.concat [
-      (* "[", Int.toString start, "-", Int.toString stop, "]", *)
       String.substring (s, start, stop-start)]
-    fun mkInfixl s acc [] = Option.valOf acc
+    fun mkInfixl _ acc [] = Option.valOf acc
       | mkInfixl s NONE (a::l) = mkInfixl s (SOME a) l
       | mkInfixl s (SOME t) (a::l) = mkInfixl s (SOME (TInfix (t, s, a))) l
     val mkInfixl = fn s => mkInfixl s NONE
@@ -761,7 +602,7 @@ fun printTacsAsE s [] = ""
       | go (LTry e) = TApp ("TRY_LT", [go e])
       | go (LRepeat e) = TApp ("REPEAT_LT", [go e])
       | go (LSelectThen (e1, e2)) = TApp ("SELECT_LT_THEN", [go e1, go e2])
-      | go (List (p, ls)) = TList (map go ls)
+      | go (List (_, ls)) = TList (map go ls)
       | go (Group (_, _, e)) = go e
       | go (RepairGroup (_, _, e, _)) = go e
       | go (Opaque (prec, p)) = TOpaque (prec, sub p)
@@ -809,7 +650,7 @@ fun printTacsAsE s [] = ""
     (print "("; indent := !indent + 1; f (); indent := !indent - 1; print ")")
   else f ()
   val getPrec = fn "by" => 8 | "suffices_by" => 8 | _ => 0
-  fun printTree prec (TAtom s) = print s
+  fun printTree _ (TAtom s) = print s
     | printTree prec (TOpaque (p, s)) = parenIf (p < prec) (fn () => print s)
     | printTree prec (TInfix (e1, s, e2)) = let
       val p = getPrec s
@@ -819,27 +660,157 @@ fun printTacsAsE s [] = ""
     | printTree prec (TApp (s, args)) =
       parenIf (9 < prec) (fn () => (
         print s; app (fn e => (print " "; printTree 10 e)) args))
-    | printTree prec (TList []) = print "[]"
-    | printTree prec (TList (a::l)) = (
+    | printTree _ (TList []) = print "[]"
+    | printTree _ (TList (a::l)) = (
       print "["; printTree 0 a;
       app (fn e => (print ", "; printTree 0 e)) l; print "]")
-    | printTree prec (TTuple []) = print "()"
-    | printTree prec (TTuple (a::l)) = (
+    | printTree _ (TTuple []) = print "()"
+    | printTree _ (TTuple (a::l)) = (
       print "("; printTree 0 a;
       app (fn e => (print ", "; printTree 0 e)) l; print ")")
   fun goL l = case optTree $ mkTree l of
       TAtom "ALL_TAC" => NONE
     | t => SOME t
-  fun goLL l [] = (
-      case goL l of
-        SOME t => (print "e("; printTree 0 t; print ");\n")
-      | NONE => ())
-    | goLL l (l'::ls) = (
-      case goL l of
-        SOME t => (print "val _ = e("; printTree 0 t; print ");\n")
-      | NONE => ();
-      goLL l' ls)
-  in goLL l ls; concat $ rev (!r) end
+  fun goT [] = ()
+    | goT [t] = (print "e("; printTree 0 t; print ");\n")
+    | goT (t::ts) = (print "val _ = e("; printTree 0 t; print ");\n"; goT ts)
+  in goT (List.mapPartial goL ls); concat $ rev (!r) end
+
+datatype tac_frag_open
+  = FOpen
+  | FOpenThen1
+  | FOpenFirst
+  | FOpenRepeat
+  | FOpenTacsToLT
+  | FOpenNullOk
+  | FOpenNthGoal of int * int
+  | FOpenLastGoal
+  | FOpenHeadGoal
+  | FOpenSplit of int * int
+  | FOpenSelect
+
+datatype tac_frag_mid
+  = FNextFirst
+  | FNextTacsToLT
+  | FNextSplit
+  | FNextSelect
+
+datatype tac_frag_close
+  = FClose
+  | FCloseFirst
+  | FCloseRepeat
+
+datatype tac_frag
+  = FFOpen of tac_frag_open
+  | FFMid of tac_frag_mid
+  | FFClose of tac_frag_close
+  | FAtom of (int * int) tac_expr
+  | FGroup of (int * int) * tac_frag list
+  | FBracket of tac_frag_open * tac_frag list * tac_frag_close * (int * int) tac_expr
+  | FMBracket of
+    tac_frag_open * tac_frag_mid * tac_frag_close * tac_frag list list * (int * int) tac_expr
+
+fun linearize isAtom e = let
+  fun group a f (one, acc) = (fn (one, l) => (one, FGroup (a, rev l) :: acc)) (f (one, []))
+  fun span e = case topSpan e of NONE => I | SOME sp => group sp
+  fun goList [] acc = acc
+    | goList (e::ls) acc = goList ls (go e acc)
+  and go e (acc as (one, acc')) = if isAtom e then (false, FAtom e :: acc') else let
+    fun bracket2 stop f start (one, acc) = (false, FBracket (start, rev (snd (f one)), stop, e) :: acc)
+    val bracket = bracket2 FClose
+    fun mbracket stop mid start f (one, acc) =
+      (false, FMBracket (start, mid, stop, f one, e) :: acc)
+    fun asTac f (true, acc) = f (true, acc)
+      | asTac f acc = bracket (K $ f (true, [])) FOpen acc
+    val r = case e of
+      Then ls => goList ls acc
+    | ThenLT (e, ls) => asTac (goList ls o go e) acc
+    | First [] => (true, FAtom (First []) :: acc')
+    | First (e::ls) =>
+      asTac (mbracket FClose FNextFirst FOpenFirst (fn one =>
+        map (fn e => snd (go e (one, []))) (e::ls))) acc
+    | Try e => asTac (bracket (fn one => go e (one, [])) FOpenFirst) acc
+    | Repeat e => asTac (bracket2 FCloseRepeat (fn one => go e (one, [])) FOpenRepeat) acc
+    | MapEvery (_, []) => acc
+    | MapFirst (_, []) => (true, FAtom (First []) :: acc')
+    | LThenLT ls => goList ls acc
+    | LThen (e, ls) => goList ls $ go e acc
+    | LThen1 e => span e (bracket (fn _ => go e (true, [])) FOpenThen1) acc
+    | LTacsToLT (List (p, e::ls)) =>
+      group p (mbracket FClose FNextTacsToLT FOpenTacsToLT (fn _ =>
+        map (fn e => snd (go e (true, []))) (e::ls))) acc
+    | LNullOk e => bracket (fn one => go e (one, [])) FOpenNullOk acc
+    | LFirst [] => (true, FAtom (LFirst []) :: acc')
+    | LFirst (e::ls) =>
+      mbracket FCloseFirst FNextFirst FOpenFirst (fn one =>
+        map (fn e => snd (go e (one, []))) (e::ls)) acc
+    | LAllGoals e => go e acc
+    | LNthGoal (e, n) => bracket (fn _ => go e (false, [])) (FOpenNthGoal n) acc
+    | LLastGoal e => bracket (fn _ => go e (false, [])) FOpenLastGoal acc
+    | LHeadGoal e => bracket (fn _ => go e (false, [])) FOpenHeadGoal acc
+    | LSplit (n, e1, e2) =>
+      mbracket FClose FNextSplit (FOpenSplit n) (fn _ =>
+        map (fn e => snd (go e (false, []))) [e1, e2]) acc
+    | LReverse => (one, FAtom LReverse :: acc')
+    | LTry e => bracket (fn one => go e (one, [])) FOpenFirst acc
+    | LRepeat e => bracket (fn one => go e (one, [])) FOpenRepeat acc
+    | LSelectThen (e1, e2) =>
+      mbracket FClose FNextSelect FOpenSelect (fn _ =>
+        map (fn f => snd (f (false, []))) [
+          go e1, span e2 $ bracket (fn _ => go e2 (false, [])) FOpen]) acc
+    | List _ => raise Bind
+    | RepairEmpty _ => acc
+    | Group       (_, p, e)    => group p (go e) acc
+    | RepairGroup (p, _, e, _) => group p (go e) acc
+    | LTacsToLT _    => (false, FAtom e :: acc')
+    | MapEvery _     => (false, FAtom e :: acc')
+    | MapFirst _     => (false, FAtom e :: acc')
+    | Rename _       => (false, FAtom e :: acc')
+    | Subgoal _      => (false, FAtom e :: acc')
+    | LSelectGoal _  => (false, FAtom e :: acc')
+    | LSelectGoals _ => (false, FAtom e :: acc')
+    | Opaque _       => (false, FAtom e :: acc')
+    | LOpaque _      => (false, FAtom e :: acc')
+    | OOpaque _      => (false, FAtom e :: acc')
+    in r end
+  in rev $ snd (go e (true, [])) end
+
+val unlinearize = let
+  fun go [] acc = acc
+    | go (FFOpen e :: l) (stk, acc) = go l ((e, acc) :: stk, [])
+    | go (FFMid _ :: _) _ = raise Bind
+    | go (FFClose _ :: _) _ = raise Bind
+    | go (FAtom a :: l) (s, acc) = go l (s, a :: acc)
+    | go (FGroup (_, e) :: l) acc = go l (go e acc)
+    | go (FBracket (_, _, _, a) :: l) (stk, acc) = go l (stk, a :: acc)
+    | go (FMBracket (_, _, _, _, a) :: l) (stk, acc) = go l (stk, a :: acc)
+  fun mkThen [] acc = Then (rev acc)
+    | mkThen (e :: l) acc =
+      if isTac e then mkThen l (e::acc) else mkThenL (Then (rev acc)) l [e]
+  and mkThenL lhs [] acc = ThenLT (lhs, rev acc)
+    | mkThenL lhs (e::l) acc =
+      if isTac e then mkThen l [e, ThenLT (lhs, rev acc)] else mkThenL lhs l (e::acc)
+  fun mkLThenL [] acc = LThenLT (rev acc)
+    | mkLThenL (e :: l) acc =
+      if isTac e then mkLThen (LThenLT (rev acc)) l [e] else mkLThenL l (e::acc)
+  and mkLThen lhs [] acc = ThenLT (lhs, rev acc)
+    | mkLThen lhs (e::l) acc =
+      if isTac e then mkLThen lhs l (e::acc) else mkLThenL l [e, LThen (lhs, rev acc)]
+  fun mkOpen FOpen acc = mkThen acc []
+    | mkOpen FOpenThen1 acc = LHeadGoal (mkThen acc [])
+    | mkOpen FOpenFirst acc = Try (mkThen acc [])
+    | mkOpen FOpenRepeat acc = Repeat (mkThen acc [])
+    | mkOpen FOpenTacsToLT acc = LHeadGoal (mkThen acc [])
+    | mkOpen FOpenNullOk acc = LNullOk (mkLThenL acc [])
+    | mkOpen (FOpenNthGoal n) acc = LNthGoal (mkThen acc [], n)
+    | mkOpen FOpenLastGoal acc = LLastGoal (mkThen acc [])
+    | mkOpen FOpenHeadGoal acc = LHeadGoal (mkThen acc [])
+    | mkOpen (FOpenSplit n) acc = LSplit (n, mkLThenL acc [], LThenLT [])
+    | mkOpen FOpenSelect acc = LAllGoals $ Try (mkThen acc [])
+  fun finish ([], acc) = mkThen (rev acc) []
+    | finish ((e, acc') :: stk, acc) =
+      finish (stk, mkOpen e (rev acc) :: acc')
+  in fn ls => finish $ go ls ([], []) end
 
 fun printFragsAsE s ls = printTacsAsE s (map unlinearize ls)
 
@@ -863,13 +834,13 @@ fun sliceTacticBlock start stop sliceClose sp e = let
       end
   and separateE sp ls f = (fn (ll, l) => (rev l::ll, [])) o f o slice sp ls
   and join sp ls f = f o slice sp ls
-  and slice1 sp (true, true) a acc = cons a acc
+  and slice1 _ (true, true) a acc = cons a acc
     | slice1 _ _ (FGroup (sp as (l, r), ls)) acc =
       if stop <= l orelse r <= start then acc else slice sp ls acc
     | slice1 sp (true, false) (FBracket (start, ls, _, _)) acc =
       slice sp ls $ cons (FFOpen start) acc
     | slice1 sp (false, false) (FBracket (_, ls, _, _)) acc = slice sp ls acc
-    | slice1 sp (false, true) (FBracket (e as (start, ls, stop, a))) acc =
+    | slice1 sp (false, true) (FBracket (start, ls, stop, a)) acc =
       if sliceClose then cons (FFClose stop) $ slice sp ls acc else
         (case start of
           FOpen => separateE sp ls I acc
@@ -879,7 +850,7 @@ fun sliceTacticBlock start stop sliceClose sp e = let
         | FOpenLastGoal => join sp ls I acc
         | FOpenHeadGoal => join sp ls I acc
         | _ => cons (FAtom a) acc)
-    | slice1 sp (inclStart, inclStop) (FMBracket (opn, mid, cls, ls, a)) acc =
+    | slice1 sp (inclStart, inclStop) (e as FMBracket (opn, mid, cls, ls, _)) acc =
       if sliceClose then let
         fun go [] acc = if inclStop then cons (FFClose cls) acc else acc
           | go (a::ls) acc = let
@@ -901,14 +872,13 @@ fun sliceTacticBlock start stop sliceClose sp e = let
               if r <= start then find ls else
               if l <= start andalso stop <= r then SOME ((l,r), a) else NONE
         val _ = case find ls of
-          NONE => acc
+        NONE => cons e acc
         | SOME (sp, a) => slice sp a acc
         in acc end
-    | slice1 sp _ a acc = cons a acc
+    | slice1 _ _ a acc = cons a acc
   val (ll, l) = slice sp (linearize isAtom e) ([], [])
   in rev (rev l :: ll) end
 
-end
 end;
 
 fun go a b () = let

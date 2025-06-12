@@ -497,6 +497,44 @@ export class HOLExtensionContext implements
         await this.notebook!.send('proofManagerLib.drop ()', false, true);
     }
 
+    async findDB() {
+        if (!this.isActive()) {
+            return;
+        }
+
+        const input = await vscode.window.showInputBox({
+            placeHolder: "Enter parts of the theorem name",
+            prompt: "Theorem name part",
+            validateInput: (text) => {
+                return text.trim().length === 0 ? "Input cannot be empty" : null;
+            }
+        });
+
+        if (input !== undefined) {
+        const text = `Hol_pp.print_find "${input}"`;
+        await this.notebook!.send(text, false, true);
+        }
+    }
+
+    async aproposDB() {
+        if (!this.isActive()) {
+            return;
+        }
+
+        const input = await vscode.window.showInputBox({
+            placeHolder: "Enter the term to match on",
+            prompt: "Term to match on",
+            validateInput: (text) => {
+                return text.trim().length === 0 ? "Input cannot be empty" : null;
+            }
+        });
+
+        if (input !== undefined) {
+        const text = `Hol_pp.print_apropos \`\`${input}\`\``;
+        await this.notebook!.send(text, false, true);
+        }
+    }
+
     /**
      * Toggle printing of terms with or without types.
      */
@@ -627,4 +665,3 @@ export class HOLExtensionContext implements
         return completions;
     }
 };
-

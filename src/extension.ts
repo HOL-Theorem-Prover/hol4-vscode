@@ -207,6 +207,14 @@ export function activate(context: vscode.ExtensionContext) {
             holExtensionContext?.holIDE?.refreshIndex();
         }),
 
+        vscode.commands.registerCommand('hol4-mode.findDB', () => {
+            holExtensionContext?.findDB();
+        }),
+
+        vscode.commands.registerCommand('hol4-mode.aproposDB', () => {
+            holExtensionContext?.aproposDB();
+        }),
+
         vscode.languages.registerHoverProvider(
             hol4selector,
             holExtensionContext,

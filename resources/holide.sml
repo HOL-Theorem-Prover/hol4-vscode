@@ -39,13 +39,13 @@ val moveUp: subtree -> subtree
 val moveDown: subtree -> subtree
 val moveLeft: subtree -> subtree
 val moveRight: subtree -> subtree
-val printTree: int -> subtree -> PolyML.pretty option
-val navigateTo: subtree -> {startOffset: int, endOffset: int} -> subtree
-val navigateTo': trees -> {startOffset: int, endOffset: int} -> subtree
+val printTree: FixedInt.int -> subtree -> PolyML.pretty option
+val navigateTo: subtree -> {startOffset: FixedInt.int, endOffset: FixedInt.int} -> subtree
+val navigateTo': trees -> {startOffset: FixedInt.int, endOffset: FixedInt.int} -> subtree
 
 val at: PolyML.parseTree list -> int list -> subtree
 
-datatype built = Built of (int * int) * PolyML.ptProperties list * built list
+datatype built = Built of (FixedInt.int * FixedInt.int) * PolyML.ptProperties list * built list
 val build: PolyML.parseTree -> built
 val buildList: PolyML.parseTree option -> built list
 
@@ -90,7 +90,7 @@ fun initialize {
   fun encode f (i, s) = let
     val j = i + #2 (Substring.base s)
     in f (fn s => push (FlatChunk (SOME j, Substring.full s))) (i, s) end
-  val {feed, regular, finishThmVal, doDecl, ...} =
+  val {feed, regular, finish, doDecl, ...} =
     HolParser.ToSML.mkPushTranslatorCore {
       filename = filename, parseError = parseError, quietOpen = true,
       read = fn _ => !sr before sr := ""
@@ -109,7 +109,7 @@ fun initialize {
       case feed () of
         HolParser.Simple.TopDecl d => (holParseTree d; pos := doDecl true (!pos) d)
       | HolParser.Simple.EOF p =>
-        (regular (!pos, p); finishThmVal (); pos := p; atEnd := true);
+        (regular (!pos, p); finish (); pos := p; atEnd := true);
       queue := rev (!queue);
       readChunk ())
 
@@ -203,7 +203,7 @@ fun at ls (n::rest) =
     in at' rest (SOME (List.nth (ls, n))) end
   | at _ _ = raise Match
 
-datatype built = Built of (int * int) * PolyML.ptProperties list * built list
+datatype built = Built of (FixedInt.int * FixedInt.int) * PolyML.ptProperties list * built list
 
 fun build (tree as ({startPosition, endPosition, ...}, props)) =
   Built ((startPosition, endPosition), props, buildList (moveDown (SOME tree)))

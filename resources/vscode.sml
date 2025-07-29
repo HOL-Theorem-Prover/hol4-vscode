@@ -67,7 +67,7 @@ fun encodeJsonPair enc1 enc2 (a, b) print =
 fun encodeJsonPair2 enc = encodeJsonPair enc enc
 
 fun encodeJsonLocation encode ({startPosition,endPosition,...}:PolyML.location) =
-  encodeJsonPair2 encode (startPosition, endPosition)
+  encodeJsonPair2 encode (FixedInt.toInt startPosition, FixedInt.toInt endPosition)
 
 fun printToString encode suff = let
   val buf = ref []
@@ -293,7 +293,6 @@ fun setFileContents text = let
       print ",\"pos\":"; encodeJsonPos2LC lines pos print;
       print ",\"msg\":"; encodeJsonPretty msg print;
       print "}"))
-    open HolParser.Simple
     (* fun addq q = case !trees of (p, ts, qs) => trees := (p, ts, q :: qs) *)
     val _ = PolyML.print_depth 100
     in
@@ -319,12 +318,13 @@ fun setFileContents text = let
           print ",\"pos\":"; encodeJsonPosLC lines i print;
           print "}")),
         error = fn {hard, location = {startPosition, endPosition, ...}, message, ...} =>
-          printError hard (startPosition, endPosition) message,
+          printError hard (FixedInt.toInt startPosition, FixedInt.toInt endPosition) message,
         runtimeExn = fn e =>
           printError true
             (case PolyML.Exception.exceptionLocation e of
               NONE => (fn i => (i, i)) (#1 (!trees))
-            | SOME {startPosition, endPosition, ...} => (startPosition, endPosition))
+            | SOME {startPosition, endPosition, ...} =>
+              (FixedInt.toInt startPosition, FixedInt.toInt endPosition))
             (exceptionMessage e),
         mlParseTree = fn t => case !trees of (p, ts, qs) => trees := (p, t :: ts, qs),
         holParseTree = fn _ => ()
@@ -515,7 +515,9 @@ fun getState startTarget endTarget = let
     case state of
       NONE => NONE
     | SOME (text, lines, endOffset, trees, ds) => let
-      val offset = {startOffset = fromLineCol lines startTarget, endOffset = endOffset}
+      val offset = {
+        startOffset = FixedInt.fromInt (fromLineCol lines startTarget),
+        endOffset = FixedInt.fromInt endOffset}
       val ds = (navigateTo' startTarget endTarget ds)
       val pt = HOL_IDE.navigateTo' trees offset
       in SOME (text, lines, offset, trees, ds, pt) end
@@ -550,7 +552,9 @@ fun getHoverInfo startTarget endTarget =
           NONE => (NONE, NONE, [])
         | SOME i => let
           val {startPosition, endPosition, ...} = loc
-          val id = String.substring (text, startPosition, endPosition - startPosition)
+          val id = String.substring (text,
+            FixedInt.toInt startPosition,
+            FixedInt.toInt (endPosition - startPosition))
           val help =
             if lastIndexOf #"." id < 0 then let
               fun validate str = let
@@ -691,7 +695,9 @@ fun gotoDefinition target =
           val newLoc = case (file, ty) of
             (SOME file, SOME _) => let
             val {startPosition, endPosition, ...} = origin
-            val id = String.substring (text, startPosition, endPosition - startPosition)
+            val id = String.substring (text,
+              FixedInt.toInt startPosition,
+              FixedInt.toInt (endPosition - startPosition))
             val basename = String.extract (file, lastIndexOf #"/" file + 1, NONE)
             val stem = String.extract (basename, 0, SOME (lastIndexOf #"." basename))
             in
@@ -715,7 +721,7 @@ fun gotoDefinition target =
     val encodeJsonPosition = fn
       PolyLoc (loc as {file, startLine, ...}) =>
         if file = "" then encodeJsonLocLC lines loc
-        else encodeJsonFileLine (file, SOME (startLine - 1))
+        else encodeJsonFileLine (file, SOME (FixedInt.toInt startLine - 1))
       | FileLine fileLine => encodeJsonFileLine fileLine
       | LineCol range => encodeJsonPair2 (encodeJsonPair2 encodeJsonInt) range
     in encodeJsonArray (encodeJsonPair2 encodeJsonPosition) out print end

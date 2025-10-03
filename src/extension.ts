@@ -31,7 +31,7 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
         // Get the path to the current workspace root. This class is constructed
         // by the extension, which is activated by opening a HOL4 document. By
         // this time there should be a workspace.
-        if (vscode.workspace.workspaceFolders.length == 1) {
+        if (vscode.workspace.workspaceFolders.length === 1) {
             const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
             holIDE = new HOLIDE(context, holPath, workspacePath);
         } else {
@@ -42,8 +42,8 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
     // Cleanup orphaned tabs from previous session
     for (const group of vscode.window.tabGroups.all) {
         for (const tab of group.tabs) {
-            if (tab.label == 'HOL4 Session' &&
-                !vscode.workspace.notebookDocuments.some(doc => doc.uri == (tab.input as { uri?: vscode.Uri }).uri)) {
+            if (tab.label === 'HOL4 Session' &&
+                !vscode.workspace.notebookDocuments.some(doc => doc.uri === (tab.input as { uri?: vscode.Uri }).uri)) {
                 vscode.window.tabGroups.close(tab);
             }
         }
@@ -159,6 +159,11 @@ export function activate(context: vscode.ExtensionContext) {
             await holExtensionContext?.notebook?.clearAll();
         }),
 
+        // Clear execution history and decorations
+        vscode.commands.registerCommand('hol4-mode.clearExecutionHistory', () => {
+            holExtensionContext?.clearExecutionHistory();
+        }),
+
         vscode.commands.registerCommand('hol4-mode.restart', () => {
             (async () => {
                 await holExtensionContext?.notebook?.stop();
@@ -182,7 +187,7 @@ export function activate(context: vscode.ExtensionContext) {
                 if (vscode.languages.match(hol4selector, doc)) {
                     (async () => {
                         const server = await holExtensionContext?.holIDE?.startServer(doc);
-                        if (server) await holExtensionContext?.holIDE?.compileDocument(server, doc);
+                        if (server) { await holExtensionContext?.holIDE?.compileDocument(server, doc); }
                     })();
                     holExtensionContext?.holIDE?.updateImports(doc);
                 }
@@ -193,7 +198,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (vscode.languages.match(hol4selector, doc)) {
                 (async () => {
                     const server = await holExtensionContext?.holIDE?.startServer(doc);
-                    if (server) await holExtensionContext?.holIDE?.compileDocument(server, doc);
+                    if (server) { await holExtensionContext?.holIDE?.compileDocument(server, doc); }
                 })();
                 holExtensionContext?.holIDE?.indexDocument(doc);
             }
@@ -241,5 +246,5 @@ export function activate(context: vscode.ExtensionContext) {
 
 // this method is called when your extension is deactivated
 export function deactivate() {
-    holExtensionContext?.stopSession()
+    holExtensionContext?.stopSession();
 }

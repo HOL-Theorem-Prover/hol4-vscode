@@ -3,6 +3,7 @@ import * as path from 'path';
 import { log, error, EXTENSION_ID, KERNEL_ID } from './common';
 import { HolNotebook } from './notebook';
 import { HOLIDE, entryToCompletionItem, entryToSymbol, isAccessibleEntry } from './holIDE';
+import { ExecutionTracker, ActionType } from './executionTracker';
 
 /**
  * Generate a HOL lexer location pragma from a vscode Position value.
@@ -15,11 +16,11 @@ function positionToLocationPragma(pos: vscode.Position): string {
  * Get the editors current selection if any, or the contents of the editor's
  * current line otherwise.
  */
-function getSelection(editor: vscode.TextEditor): string {
-    const document = editor.document;
+function getSelection(editor: vscode.TextEditor): vscode.Selection {
     const selection = editor.selection;
-    return selection.isEmpty ? document.lineAt(selection.active.line).text
-        : document.getText(selection);
+    return selection.isEmpty 
+            ? new vscode.Selection(selection.active.line, 0, selection.active.line, editor.document.lineAt(selection.active.line).text.length)
+            : selection;
 }
 
 /**
@@ -149,13 +150,13 @@ function selectBetween(editor: vscode.TextEditor, init: RegExp, stop: RegExp): v
  *
  * @note this function embeds a location pragma in the string it returns.
  */
-function extractGoal(editor: vscode.TextEditor): [string, string] | undefined {
+function extractGoal(editor: vscode.TextEditor): [string, vscode.Selection] | undefined {
     const selection = editor.selection;
     const document = editor.document;
 
     if (!selection.isEmpty) {
         const locPragma = positionToLocationPragma(selection.anchor);
-        return [locPragma, document.getText(selection)];
+        return [locPragma, selection];
     }
 
     const spanBegin = /^(Theorem|Triviality)\s+[^\[\:]+(\[[^\]]*\])?\s*\:/;
@@ -168,7 +169,7 @@ function extractGoal(editor: vscode.TextEditor): [string, string] | undefined {
         (sel = selectBetween(editor, /``/, /``/)) ||
         (sel = selectBetween(editor, /`/, /`/))) {
         const locPragma = positionToLocationPragma(sel.anchor);
-        return [locPragma, document.getText(sel)];
+        return [locPragma, sel];
     }
 
     return;
@@ -178,20 +179,20 @@ function extractGoal(editor: vscode.TextEditor): [string, string] | undefined {
  * Identical to {@link extractGoal} but only accepts term quotations.
  * @todo Merge with extractGoal.
  */
-function extractSubgoal(editor: vscode.TextEditor): [string, string] | undefined {
+function extractSubgoal(editor: vscode.TextEditor): [string, vscode.Selection] | undefined {
     const selection = editor.selection;
     const document = editor.document;
 
     if (!selection.isEmpty) {
         const locPragma = positionToLocationPragma(selection.anchor);
-        return [locPragma, document.getText(selection)];
+        return [locPragma, selection];
     }
 
     let sel;
     if ((sel = selectBetween(editor, /‘/, /’/)) ||
         (sel = selectBetween(editor, /`/, /`/))) {
         const locPragma = positionToLocationPragma(sel.anchor);
-        return [locPragma, document.getText(sel)];
+        return [locPragma, sel];
     }
 
     return;
@@ -204,6 +205,9 @@ export class HOLExtensionContext implements
     /** Currently active notebook editor (if any). */
     public notebook?: HolNotebook;
 
+    /** Execution tracker for managing code decorations and history. */
+    public executionTracker: ExecutionTracker;
+
     constructor(
         private context: vscode.ExtensionContext,
 
@@ -212,7 +216,32 @@ export class HOLExtensionContext implements
 
         /** Current IDE class instance. */
         public holIDE?: HOLIDE
-    ) { }
+    ) {
+        this.executionTracker = new ExecutionTracker();
+    }
+
+    private pendingActionCell: Map<string, string> = new Map(); // cellUri -> actionId
+    
+    private setupKernelListeners() {
+        if (this.notebook?.kernel) {
+            this.notebook.kernel.onExecComplete(({ cell, success }) => {
+                this.handleExecutionComplete(cell, success);
+            });
+        }
+    }
+
+    private handleExecutionComplete(cell: vscode.NotebookCell, success: boolean) {
+        const cellKey = `${cell.notebook.uri.toString()}#${cell.index}`;
+        const actionId = this.pendingActionCell.get(cellKey);
+        if (actionId) {
+            this.pendingActionCell.delete(cellKey);
+            if (success) {
+                this.executionTracker.confirmAction(actionId);
+            } else {
+                this.executionTracker.cancelAction(actionId);
+            }
+        }
+    }
 
     /** Returns whether the current session is active. If it is not active, then
      * an error message is printed.
@@ -252,9 +281,9 @@ export class HOLExtensionContext implements
                 return e.notebook.metadata.hol || (
                     // Heuristic identification of orphaned HOL windows
                     e.notebook.isUntitled &&
-                    e.notebook.cellCount == 0 &&
-                    e.notebook.notebookType == 'interactive'
-                )
+                    e.notebook.cellCount === 0 &&
+                    e.notebook.notebookType === 'interactive'
+                );
             });
             if (!notebookEditor) {
                 const result = await vscode.commands.executeCommand<{ notebookEditor?: vscode.NotebookEditor }>(
@@ -296,6 +325,9 @@ export class HOLExtensionContext implements
 
         this.notebook.show();
         await this.notebook.start();
+
+        this.setupKernelListeners();
+
         log('Started session');
     }
 
@@ -307,14 +339,18 @@ export class HOLExtensionContext implements
             return;
         }
 
+        this.executionTracker.clearAll();
+
         log('Stopped session');
         this.notebook!.close();
     }
 
     /**
-     * Stop the HOL terminal session.
+     * Restart the HOL terminal session.
      */
     restartSession(editor: vscode.TextEditor) {
+        this.executionTracker.clearAll();
+
         log('Restarted session');
         this.notebook?.stop();
         this.startSession(editor);
@@ -342,7 +378,13 @@ export class HOLExtensionContext implements
             await this.startSession(editor);
         }
 
-        const text = getSelection(editor);
+        const selection = getSelection(editor);
+        const text = editor.document.getText(selection);
+
+        const actionId = this.executionTracker.recordPendingAction(ActionType.selection, editor, selection, text);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
 
         await this.notebook!.send(text, true, true);
     }
@@ -359,9 +401,13 @@ export class HOLExtensionContext implements
         }
 
         const currentLine = editor.selection.active.line;
-
         const selection = new vscode.Selection(0, 0, currentLine, 0);
         const text = editor.document.getText(selection);
+        
+        const actionId = this.executionTracker.recordPendingAction(ActionType.untilCursor, editor, selection, text);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
 
         await this.notebook!.send(text, true, true);
     }
@@ -375,16 +421,24 @@ export class HOLExtensionContext implements
             await this.startSession(editor);
         }
 
-        let goal = extractGoal(editor);
-        if (!goal) {
+        const goalData = extractGoal(editor);
+        if (!goalData) {
             vscode.window.showErrorMessage('Unable to select a goal term');
             error('Unable to select goal term');
             return;
         }
-        let [locPragma, text] = goal;
+        let [locPragma, goalSelection] = goalData;
+        const text = editor.document.getText(goalSelection);
+        
         const faketext = `proofManagerLib.g(\`${text}\`)`;
         const realtext = `proofManagerLib.g(\`${locPragma}${text}\`)`;
-        const full = `let val x = ${realtext}; val _ = proofManagerLib.set_backup 100 in x end`
+        const full = `let val x = ${realtext}; val _ = proofManagerLib.set_backup 100 in x end`;
+        
+        const actionId = this.executionTracker.recordPendingAction(ActionType.goal, editor, goalSelection, text);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
+
         await this.notebook!.send(faketext, false, true, full);
     }
 
@@ -396,15 +450,23 @@ export class HOLExtensionContext implements
             return;
         }
 
-        let sg = extractSubgoal(editor);
-        if (!sg) {
+        let subGoalData = extractSubgoal(editor);
+        if (!subGoalData) {
             vscode.window.showErrorMessage('Unable to select a subgoal term');
             error('Unable to select subgoal term');
             return;
         }
-        let [locPragma, text] = sg;
+        const [locPragma, subGoalSelection] = subGoalData;
+        const text = editor.document.getText(subGoalSelection);
+
         const faketext = `proofManagerLib.e(sg\`${text}\`)`;
         const realtext = `proofManagerLib.e(sg\`${locPragma}${text}\`)`;
+        
+        const actionId = this.executionTracker.recordPendingAction(ActionType.subgoal, editor, subGoalSelection, text);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
+        
         await this.notebook!.send(faketext, false, true, realtext);
     }
 
@@ -416,10 +478,16 @@ export class HOLExtensionContext implements
             return;
         }
 
-        let tacticText = getSelection(editor);
-        tacticText = processTactics(tacticText);
+        const tacticSelection = getSelection(editor);
+        const tacticText0 = editor.document.getText(tacticSelection);
+        const tacticText = processTactics(tacticText0);
         const text = `proofManagerLib.e(${tacticText})`;
         const full = addLocationPragma(text, editor.selection.start);
+
+        const actionId = this.executionTracker.recordPendingAction(ActionType.tactic, editor, tacticSelection, tacticText);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
 
         await this.notebook!.send(text, false, true, full);
     }
@@ -433,10 +501,17 @@ export class HOLExtensionContext implements
             return;
         }
 
-        let tacticText = editor.document.lineAt(editor.selection.active.line).text;
-        tacticText = processTactics(tacticText);
+        const currentLine = editor.selection.active.line;
+        const tacticText0 = editor.document.lineAt(currentLine).text;
+        const tacticText = processTactics(tacticText0);
         const text = `proofManagerLib.e(${tacticText})`;
         const full = addLocationPragma(text, editor.selection.start);
+
+        const tacticSelection = new vscode.Range(currentLine, 0, currentLine, editor.document.lineAt(currentLine).text.length);
+        const actionId = this.executionTracker.recordPendingAction(ActionType.tacticLine, editor, tacticSelection, tacticText);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
 
         await this.notebook!.send(text, false, true, full);
     }
@@ -472,6 +547,8 @@ export class HOLExtensionContext implements
             return;
         }
 
+        this.executionTracker.stepBack(1);
+
         await this.notebook!.send('proofManagerLib.backup ()', false, true);
     }
 
@@ -483,6 +560,8 @@ export class HOLExtensionContext implements
             return;
         }
 
+        this.executionTracker.clearCurrentGoal();
+
         await this.notebook!.send('proofManagerLib.restart ()', false, true);
     }
 
@@ -493,6 +572,8 @@ export class HOLExtensionContext implements
         if (!this.isActive()) {
             return;
         }
+
+        this.executionTracker.dropCurrentGoal();
 
         await this.notebook!.send('proofManagerLib.drop ()', false, true);
     }
@@ -516,6 +597,26 @@ export class HOLExtensionContext implements
             return;
         }
         await this.notebook!.send('Globals.show_assums := not (!Globals.show_assums)', false, true);
+    }
+
+    /**
+     * Clear all execution decorations and history.
+     */
+    clearExecutionHistory() {
+        this.executionTracker.clearAll();
+        vscode.window.showInformationMessage('Execution history cleared');
+    }
+
+    /**
+     * Remove the last executed action (useful for failed tactics).
+     */
+    removeLastAction() {
+        const removed = this.executionTracker.stepBack(1);
+        if (removed.length > 0) {
+            vscode.window.showInformationMessage(`Removed last action: ${removed[0].type}`);
+        } else {
+            vscode.window.showInformationMessage('No actions to remove');
+        }
     }
 
     /**
@@ -546,7 +647,9 @@ export class HOLExtensionContext implements
             markdownString.appendCodeblock(entry.statement);
             results.push(markdownString);
         }
-        if (results) return new vscode.Hover(results, range ?? wordRange);
+        if (results) {
+            return new vscode.Hover(results, range ?? wordRange);
+        }
     }
 
     /**
@@ -564,7 +667,7 @@ export class HOLExtensionContext implements
             entry.name === word &&
             isAccessibleEntry(entry, this.holIDE!.imports[document.uri.toString()], document));
         const defns: vscode.DefinitionLink[] = (await promise?.catch()) ?? [];
-        if (defns.length == 0 && entry) {
+        if (defns.length === 0 && entry) {
             const position = new vscode.Position(entry.line - 1, 0);
             defns.push({
                 targetUri: vscode.Uri.file(entry.file),

@@ -44,7 +44,8 @@ export class ExecutionTracker {
             backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
             isWholeLine: false,
             overviewRulerColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
-            overviewRulerLane: vscode.OverviewRulerLane.Right
+            overviewRulerLane: vscode.OverviewRulerLane.Right,
+            rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
         });
 
         this.pendingDecorationType = vscode.window.createTextEditorDecorationType({
@@ -53,7 +54,8 @@ export class ExecutionTracker {
             borderColor: 'rgba(255, 255, 255, 0.3)',
             isWholeLine: false,
             overviewRulerColor: 'rgba(255, 255, 255, 0.2)',
-            overviewRulerLane: vscode.OverviewRulerLane.Right
+            overviewRulerLane: vscode.OverviewRulerLane.Right,
+            rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
         });
 
         vscode.window.onDidChangeActiveTextEditor(editor => {
@@ -219,22 +221,15 @@ export class ExecutionTracker {
         }
 
         const documentActions = this.getActionsForDocument(editor.document.uri.toString());
-        const executedDecorations: vscode.DecorationOptions[] = documentActions.map(action => ({
-            range: action.range,
-        }));
+        const executedRanges = documentActions.map(action => action.range);
 
         // Get pending actions for this document
-        const pendingDecorations: vscode.DecorationOptions[] = [];
-        for (const [actionId, pendingAction] of this.pendingActions) {
-            if (pendingAction.editor.document.uri.toString() === editor.document.uri.toString()) {
-                pendingDecorations.push({
-                    range: pendingAction.range,
-                });
-            }
-        }
+        const pendingRanges = Array.from(this.pendingActions.values())
+            .filter(pendingAction => pendingAction.editor.document.uri.toString() === editor.document.uri.toString())
+            .map(pendingAction => pendingAction.range);
 
-        editor.setDecorations(this.executedDecorationType, executedDecorations);
-        editor.setDecorations(this.pendingDecorationType, pendingDecorations);
+        editor.setDecorations(this.executedDecorationType, executedRanges);
+        editor.setDecorations(this.pendingDecorationType, pendingRanges);
     }
 
     dispose(): void {

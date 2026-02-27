@@ -133,6 +133,8 @@ export class HOLIDE {
                 'src/portableML/UC_ASCII_Encode.sml',
                 'help/src-sml/ParseDoc.sig',
                 'help/src-sml/ParseDoc.sml',
+                'tools/Holmake/HolParserOld.sig',
+                'tools/Holmake/HolParserOld.sml',
             ].map(f => path.join(holPath, f)),
             ...[
                 'holide.sml', 'vscodeBase.sml', 'vscode.sml', 'setup.sml'

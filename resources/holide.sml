@@ -63,7 +63,7 @@ fun prelude () = let
   val _ = PolyML.Compiler.reportUnreferencedIds := true
   val _ = PolyML.Compiler.printInAlphabeticalOrder := false
   val _ = PolyML.Compiler.maxInlineSize := 80
-  fun f (t, _) = mk_oracle_thm "fast_proof" ([], t)
+  fun f (t, _) = mk_oracle_thm "fast_proof" t
   fun f2 g = (
     if current_theory () = "scratch"
     then HOL_WARNING "HOL_IDE" "prove" "calling prove before new_theory"

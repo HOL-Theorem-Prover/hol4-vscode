@@ -196,23 +196,20 @@ val currentCompilation =
   ref (NONE : ((parse_data ref * (string * int vector)) * Thread.thread) option)
 val lastTrees = ref (emptyParseData, ("", Vector.fromList []))
 
-val printToAsyncChannel = let
+local
   val (suff, printer) = let
-    val fd =
-      case OS.Process.getEnv "HOLIDE_ASYNC_FD" of
-        NONE => raise Bind
-      | SOME fd => case SysWord.fromString fd of NONE => raise Bind | SOME fd => fd
-    val fd = Posix.FileSys.wordToFD fd
+    val fd = Posix.FileSys.wordToFD $ Option.valOf $ SysWord.fromString $
+      Option.valOf $ OS.Process.getEnv "HOLIDE_ASYNC_FD"
     val _ = Posix.IO.getfd fd
     val w = Posix.IO.mkTextWriter {fd = fd, name = "async_out",
       appendMode = false, initBlkMode = true, chunkSize = 4096}
     val asyncOut = TextIO.mkOutstream $ TextIO.StreamIO.mkOutstream (w, IO.LINE_BUF)
-    in ("\000", fn result => (TextIO.output (asyncOut, result); TextIO.flushOut asyncOut))
-    end
+    in ("\000", fn result => (TextIO.output (asyncOut, result); TextIO.flushOut asyncOut)) end
     handle _ => (
       !WARNING_outstream "<<warning: could not open async stream, printing to stdout>>\n";
       ("\n", print))
-  in fn id => fn f =>
+in
+  fun printToAsyncChannel id f =
     if !currentThread = id then printer $ printToString f suff
     else raise Thread.Interrupt
   end
@@ -342,21 +339,18 @@ val toLower = String.implode o map Char.toLower o String.explode
 
 fun splitOn c s = let
   fun loop i j out =
-    if i = 0 then String.substring (s, i, j - i) :: out
-    else let
-      val i' = i - 1
-      in
+    if i = 0 then String.substring (s, i, j - i) :: out else
+    case i - 1 of i' =>
         if c = String.sub (s, i')
         then loop i' i' (String.substring (s, i, j - i) :: out)
         else loop i' j out
-      end
   val sz = String.size s
   in loop sz sz [] end
 
 fun lastIndexOf' c s i =
-  if i = 0 then ~1 else let
-    val i' = i - 1
-    in if c = String.sub (s, i') then i' else lastIndexOf' c s i' end
+  if i = 0 then ~1 else
+  case i - 1 of i' =>
+  if c = String.sub (s, i') then i' else lastIndexOf' c s i'
 
 fun lastIndexOf c s = lastIndexOf' c s (String.size s)
 

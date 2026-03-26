@@ -413,6 +413,49 @@ export class HOLExtensionContext implements
     }
 
     /**
+     * Send code from the end of last executed code to the current cursor position.
+     */
+    async sendInterpretToPoint(editor: vscode.TextEditor) {
+        this.sync();
+        if (!this.notebook?.kernel.running) {
+            await this.startSession(editor);
+        }
+
+        const cursorPosition = editor.selection.active;
+        const documentUri = editor.document.uri.toString();
+        const executedActions = this.executionTracker.getActionsForDocument(documentUri);
+
+        let startPosition: vscode.Position;
+        if (executedActions.length === 0) {
+            // No previous executed code, start from beginning
+            startPosition = new vscode.Position(0, 0);
+        } else {
+            // Find the furthest executed action (biggest end position)
+            const furthestAction = executedActions.reduce((furthest, current) => {
+                return current.range.end.isAfter(furthest.range.end) ? current : furthest;
+            }, executedActions[0]);
+            startPosition = furthestAction.range.end;
+
+            // Check if cursor is before or at the furthest executed position
+            if (cursorPosition.isBeforeOrEqual(startPosition)) {
+                vscode.window.showErrorMessage('Cursor is at or before the furthest executed code position');
+                error('Cursor position is at or before furthest executed code');
+                return;
+            }
+        }
+
+        const range = new vscode.Range(startPosition, cursorPosition);
+        const text = editor.document.getText(range);
+
+        const actionId = this.executionTracker.recordPendingAction(ActionType.interpretToPoint, editor, range, text);
+        const cellIndex = this.notebook!.notebookEditor.notebook.cellCount;
+        const cellKey = `${this.notebook!.notebookEditor.notebook.uri.toString()}#${cellIndex}`;
+        this.pendingActionCell.set(cellKey, actionId);
+
+        await this.notebook!.send(text, true, true);
+    }
+
+    /**
      * Send a goal selection to the terminal.
      */
     async sendGoal(editor: vscode.TextEditor) {

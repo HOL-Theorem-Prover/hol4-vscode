@@ -72,6 +72,11 @@
                 "category": "HOL"
             },
             {
+                "command": "hol4-mode.sendInterpretToPoint",
+                "title": "Interpret to point",
+                "category": "HOL"
+            },
+            {
                 "command": "hol4-mode.sendGoal",
                 "title": "Send goal",
                 "category": "HOL"
@@ -211,6 +216,12 @@
                 "command": "hol4-mode.sendUntilCursor",
                 "key": "ctrl+h ctrl+shift+s",
                 "mac": "cmd+h cmd+shift+s",
+                "when": "editorLangId == hol4"
+            },
+            {
+                "command": "hol4-mode.sendInterpretToPoint",
+                "key": "ctrl+h i",
+                "mac": "cmd+h i",
                 "when": "editorLangId == hol4"
             },
             {

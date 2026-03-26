@@ -4,6 +4,7 @@ export enum ActionType {
     goal = 'goal',
     selection = 'selection',
     untilCursor = 'untilcursor',
+    interpretToPoint = 'interprettopoint',
     subgoal = 'subgoal',
     tactic = 'tactic',
     tacticLine = 'tacticline'

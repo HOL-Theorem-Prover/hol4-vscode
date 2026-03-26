@@ -88,6 +88,11 @@ export function activate(context: vscode.ExtensionContext) {
             holExtensionContext?.sendUntilCursor(editor);
         }),
 
+        // Send code from the end of last executed code to the current cursor position.
+        vscode.commands.registerTextEditorCommand('hol4-mode.sendInterpretToPoint', (editor) => {
+            holExtensionContext?.sendInterpretToPoint(editor);
+        }),
+
         // Send a goal selection to the terminal.
         vscode.commands.registerTextEditorCommand('hol4-mode.sendGoal', (editor) => {
             holExtensionContext?.sendGoal(editor);

@@ -212,7 +212,7 @@ in
   fun printToAsyncChannel id f =
     if !currentThread = id then printer $ printToString f suff
     else raise Thread.Interrupt
-  end
+end
 
 fun mkLineCounter str = let
   fun loop i ls =

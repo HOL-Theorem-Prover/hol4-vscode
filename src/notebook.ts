@@ -35,6 +35,11 @@ export class HolNotebook {
 
     private overflowPromise: Promise<void>;
 
+    /** Get the notebook editor */
+    get notebookEditor(): vscode.NotebookEditor {
+        return this.editor;
+    }
+
     constructor(
         context: vscode.ExtensionContext,
         private readonly cwd: string,

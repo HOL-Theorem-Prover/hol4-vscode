@@ -9,6 +9,11 @@ class Execution {
     private success: boolean = true;
     private writeAnyway: NodeJS.Timeout | undefined;
     constructor(public exec: vscode.NotebookCellExecution) { }
+    
+    get isSuccess(): boolean {
+        return this.success;
+    }
+
     appendOutput(str: string, err?: boolean) {
         const pos = str.lastIndexOf('\n');
         if (pos >= 0) {
@@ -27,7 +32,7 @@ class Execution {
                 }
             }
         } else {
-            if (err) this.markFail();
+            if (err) { this.markFail(); }
             this.buffer += str;
         }
     }
@@ -48,13 +53,13 @@ class Execution {
         this.success = false;
     }
     end(success?: boolean) {
-        if (this.buffer) this.output();
+        if (this.buffer) { this.output(); }
         clearTimeout(this.writeAnyway);
-        this.exec.end(success ?? this.success, Date.now())
+        this.exec.end(success ?? this.success, Date.now());
     }
 }
 
-export type OverflowEvent = { s: string, err: boolean }
+export type OverflowEvent = { s: string, err: boolean };
 export class HolKernel {
     /**
      * The connection to the HOL process itself. May be undefined if the process has not started yet
@@ -75,11 +80,17 @@ export class HolKernel {
      */
     private currentExecution?: Execution;
 
+    /** The current cell being executed, if any. */
+    private currentCell?: vscode.NotebookCell;
+
     /** Fires when a queued cell is about to be executed. */
     private execListener = new vscode.EventEmitter<vscode.NotebookCell>();
 
     /** Fires when HOL says something outside the expected request/response flow. */
     private overflowListener = new vscode.EventEmitter<OverflowEvent>();
+
+    /** Fires when an execution completes with success/failure status. */
+    private execCompleteListener = new vscode.EventEmitter<{ cell: vscode.NotebookCell, success: boolean }>();
 
     private interceptResult: { data: string, finish: (data: string) => void } | undefined = undefined;
 
@@ -123,6 +134,7 @@ export class HolKernel {
 
         this.sync();
         this.currentExecution = new Execution(this.controller.createNotebookCellExecution(cell));
+        this.currentCell = cell;
         this.execListener.fire(cell);
 
         if (this.child) {
@@ -150,15 +162,25 @@ export class HolKernel {
         if (this.interceptResult) {
             this.interceptResult.finish(this.interceptResult.data);
         } else if (this.currentExecution) {
+            const success = this.currentExecution.isSuccess;
             this.currentExecution.end();
+            
+            if (this.currentCell) {
+                this.execCompleteListener.fire({ cell: this.currentCell, success });
+                this.currentCell = undefined;
+            }
+            
             this.currentExecution = undefined;
             const cell = this.executionQueue.shift();
-            if (cell) this.runCell(cell);
+            if (cell) {
+                this.runCell(cell);
+            }
         }
     }
 
     onOverflow = this.overflowListener.event;
     onWillExec = this.execListener.event;
+    onExecComplete = this.execCompleteListener.event;
 
     start(): Promise<void> {
         this.child = child_process.spawn(path.join(this.holPath, 'bin', 'hol'), ['--zero'], {
@@ -170,23 +192,23 @@ export class HolKernel {
         // log(`starting kernel ${this.child.pid}`);
         this.executionOrder = 0;
         const pid = this.child.pid;
-        const onKilled = () => { if (pid === this.child?.pid) this.onKilled() };
+        const onKilled = () => { if (pid === this.child?.pid) { this.onKilled(); } };
         this.child.addListener('disconnect', onKilled);
         this.child.addListener('close', onKilled);
         this.child.addListener('exit', onKilled);
         return new Promise((resolve, reject) => {
             const buffer: string[] = [];
             const listenerStderr = (data: Buffer) => {
-                if (!data.length) return;
+                if (!data.length) { return; }
                 buffer.push(data.toString());
                 // log(`start recv err ${data.toString()}`);
                 const s = buffer.join('');
                 this.overflowListener.fire({ s, err: true });
                 buffer.length = 0;
-                reject(s)
+                reject(s);
             };
             const listenerStdout = (data: Buffer) => {
-                if (!data.length) return;
+                if (!data.length) { return; }
                 if (data.readUint8(data.length - 1) === 0) {
                     buffer.push(data.toString(undefined, undefined, data.length - 1));
                     // log(`start recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
@@ -201,10 +223,10 @@ export class HolKernel {
                     // log(`start recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
                     buffer.push(data.toString());
                 }
-            }
+            };
             this.child?.stdout?.on('data', listenerStdout);
             this.child?.stderr?.on('data', listenerStderr);
-        })
+        });
     }
 
     private appendOutput(str: string, err?: boolean) {
@@ -218,9 +240,9 @@ export class HolKernel {
     }
 
     private finishOpen(result: string) {
-        if (result) this.overflowListener.fire({ s: result, err: result.includes('error:') });
+        if (result) { this.overflowListener.fire({ s: result, err: result.includes('error:') }); }
         this.child?.stdout?.on('data', (data: Buffer) => {
-            if (!data.length) return;
+            if (!data.length) { return; }
             if (data.readUint8(data.length - 1) === 0) {
                 this.appendOutput(data.toString(undefined, undefined, data.length - 1));
                 // log(`recv ok "${data.toString(undefined, undefined, data.length - 1)}"`);
@@ -231,7 +253,7 @@ export class HolKernel {
             }
         });
         this.child?.stderr?.on('data', (data: Buffer) => {
-            if (!data.length) return;
+            if (!data.length) { return; }
             this.appendOutput(data.toString(), true);
         });
     }
@@ -253,6 +275,13 @@ export class HolKernel {
         if (this.currentExecution) {
             this.currentExecution.markFail();
             this.currentExecution.end();
+            
+            // Emit execution complete event for cancelled execution
+            if (this.currentCell) {
+                this.execCompleteListener.fire({ cell: this.currentCell, success: false });
+                this.currentCell = undefined;
+            }
+            
             this.currentExecution = undefined;
         }
         this.executionQueue = [];
@@ -273,7 +302,7 @@ export class HolKernel {
     }
 
     sync() {
-        if (this.child && (this.child.killed || !this.child.pid || this.child?.exitCode != null)) {
+        if (this.child && (this.child.killed || !this.child.pid || this.child?.exitCode !== null)) {
             // log(`mystery death of kernel ${this.child.pid}`);
             this.onKilled();
         }

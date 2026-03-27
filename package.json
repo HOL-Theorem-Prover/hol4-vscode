@@ -72,6 +72,11 @@
                 "category": "HOL"
             },
             {
+                "command": "hol4-mode.sendInterpretToPoint",
+                "title": "Interpret to point",
+                "category": "HOL"
+            },
+            {
                 "command": "hol4-mode.sendGoal",
                 "title": "Send goal",
                 "category": "HOL"
@@ -167,6 +172,13 @@
                 "title": "Collapse all cells",
                 "icon": "$(collapse-all)",
                 "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.clearExecutionHistory",
+                "title": "Clear execution history and decorations",
+                "icon": "$(clear-all)",
+                "category": "HOL",
+                "enablement": "config.hol4-mode.executionTracking"
             }
         ],
         "keybindings": [
@@ -204,6 +216,12 @@
                 "command": "hol4-mode.sendUntilCursor",
                 "key": "ctrl+h ctrl+shift+s",
                 "mac": "cmd+h cmd+shift+s",
+                "when": "editorLangId == hol4"
+            },
+            {
+                "command": "hol4-mode.sendInterpretToPoint",
+                "key": "ctrl+h i",
+                "mac": "cmd+h i",
                 "when": "editorLangId == hol4"
             },
             {
@@ -309,6 +327,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Show raw input/output in console view"
+                },
+                "hol4-mode.executionTracking": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable code execution overlay"
                 },
                 "hol4-mode.holdir": {
                     "type": "string",

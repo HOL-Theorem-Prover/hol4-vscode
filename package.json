@@ -77,6 +77,16 @@
                 "category": "HOL"
             },
             {
+                "command": "hol4-mode.findDB",
+                "title": "Find Theorem name in DB",
+                "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.aproposDB",
+                "title": "Find by term matches in DB",
+                "category": "HOL"
+            },
+            {
                 "command": "hol4-mode.sendSubgoal",
                 "title": "Send subgoal",
                 "category": "HOL"

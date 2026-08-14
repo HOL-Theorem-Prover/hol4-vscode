@@ -12,6 +12,37 @@ Expects a HOL4 installation to exist, and the environment variable `$HOLDIR` to 
 installation. The HOL4 homepage can be found [here](https://hol-theorem-prover.org) and its GitHub
 repository [here](https://github.com/HOL-Theorem-Prover/HOL).
 
+## HOL4 LSP integration
+
+When `hol4-mode.lsp.enabled` is `true` (the default), the extension
+starts a HOL4 [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
+client that speaks to `bin/hol lsp`.  This delivers:
+
+- **Compile-driven diagnostics** in the Problems panel and inline
+  squiggles as you edit.
+- **LSP-provided hover** with type information from the running HOL
+  session (in addition to the existing symbol-index hover, which
+  keeps working).
+- **HOL Goals side pane** — press `Ctrl+H Ctrl+G` (or `Cmd+H Cmd+G`
+  on macOS) to open a pane that follows the cursor and shows the
+  proof state at each tactic step inside a `Proof … QED` block.
+
+Requirements: a HOL4 build recent enough that `bin/hol lsp` is a
+valid subcommand.  See [`tools-poly/lsp/README.md`](https://github.com/HOL-Theorem-Prover/HOL/blob/develop/tools-poly/lsp/README.md)
+in the HOL4 repository for the server contract.
+
+Related settings:
+
+- `hol4-mode.lsp.enabled` (default: `true`) — toggle the client
+  entirely.  With `false` the extension behaves as it did before
+  the LSP integration.
+- `hol4-mode.lsp.executable` (default: empty) — override the path
+  to `bin/hol`.  Falls back to `hol4-mode.holdir/bin/hol`, then
+  `$HOLDIR/bin/hol`.
+
+Palette commands: `HOL: Toggle HOL Goals pane`, `HOL: Restart LSP
+server`, `HOL: Show LSP output channel`.
+
 ## Extension Settings
 
 It is possible to toggle the indexing of theorems and definitions in the workspace from the settings

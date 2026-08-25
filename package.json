@@ -12,7 +12,7 @@
         "Programming Languages"
     ],
     "activationEvents": [
-        "onLanguage:sml"
+        "onLanguage:hol4"
     ],
     "main": "./out/extension.js",
     "contributes": {

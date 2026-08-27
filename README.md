@@ -27,6 +27,27 @@ client that speaks to `bin/hol lsp`.  This delivers:
   on macOS) to open a pane that follows the cursor and shows the
   proof state at each tactic step inside a `Proof … QED` block.
 
+### One server per script
+
+A `bin/hol lsp` process can serve exactly one theory script for its
+lifetime.  Loading a script's ancestors puts them in the theory graph
+and *seals* them, and the seal is a process-global soundness gate
+against cross-theory redefinition: a second script's ancestors can
+then be neither re-read nor withdrawn.  A shared server does not fail
+loudly, it answers with wrong goal states and dead hovers.
+
+So the extension starts one server per `*Script.sml` file, when that
+file first becomes visible, and stops it when the file is closed.
+Each server runs in its script's own directory, so it picks up the
+`Holmakefile` (and any `HOLHEAP`) that governs that script.
+
+Two consequences worth knowing:
+
+- Each server loads a HOL heap, which costs a few seconds and a few
+  hundred megabytes.  Opening ten scripts at once starts ten of them.
+- `.sig` files and non-script `.sml` files get no server.  They
+  declare no theory of their own, so there is no goal state to show.
+
 Requirements: a HOL4 build recent enough that `bin/hol lsp` is a
 valid subcommand.  See [`tools-poly/lsp/README.md`](https://github.com/HOL-Theorem-Prover/HOL/blob/develop/tools-poly/lsp/README.md)
 in the HOL4 repository for the server contract.
@@ -41,7 +62,9 @@ Related settings:
   `$HOLDIR/bin/hol`.
 
 Palette commands: `HOL: Toggle HOL Goals pane`, `HOL: Restart LSP
-server`, `HOL: Show LSP output channel`.
+server for the active script`, `HOL: Show LSP output channel for the
+active script`.  The last two, and the status bar item, act on the
+server belonging to the script in the active editor.
 
 ## Extension Settings
 

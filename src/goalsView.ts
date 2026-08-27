@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { KERNEL_ID } from './common';
 import { escapeHtml } from './server';
 import {
     GoalStateParams,
     GoalStateResponse,
-    LspClient,
+    LspClients,
+    isHolScript,
 } from './lspClient';
 
 const DEBOUNCE_MS = 150;
@@ -16,12 +16,19 @@ export class GoalsView implements vscode.Disposable {
     private timer: NodeJS.Timeout | undefined;
     private readonly disposables: vscode.Disposable[] = [];
 
-    constructor(private readonly client: LspClient) {
+    constructor(private readonly clients: LspClients) {
         this.disposables.push(
             vscode.window.onDidChangeTextEditorSelection(
                 (e) => this.schedule(e.textEditor)),
             vscode.window.onDidChangeActiveTextEditor(
-                (ed) => { if (ed) this.schedule(ed); }));
+                (ed) => { if (ed) this.schedule(ed); }),
+            // A server takes seconds to load its heap; refresh when
+            // it comes up rather than leaving the pane on "starting"
+            // until the next keystroke.
+            this.clients.onDidChangeClientState(() => {
+                const ed = vscode.window.activeTextEditor;
+                if (ed) this.schedule(ed);
+            }));
     }
 
     toggle(): void {
@@ -53,7 +60,8 @@ export class GoalsView implements vscode.Disposable {
 
     private schedule(editor: vscode.TextEditor): void {
         if (!this.panel) return;
-        if (editor.document.languageId !== KERNEL_ID) return;
+        // Only scripts have a server, and so a goal state.
+        if (!isHolScript(editor.document)) return;
         if (this.timer) clearTimeout(this.timer);
         this.timer = setTimeout(() => this.refresh(editor), DEBOUNCE_MS);
     }
@@ -74,17 +82,22 @@ export class GoalsView implements vscode.Disposable {
         };
         let reply: GoalStateResponse | null | undefined;
         try {
-            reply = await this.client.sendRequest<GoalStateResponse | null>(
-                '$/hol/goalState', params);
+            // Resolved per document: each script has its own server.
+            reply = await this.clients.sendRequest<GoalStateResponse | null>(
+                doc, '$/hol/goalState', params);
         } catch (err) {
             this.renderIdle(`goalState request failed: ${err}`);
             return;
         }
         if (!this.panel) return;
+        if (reply === undefined) {
+            this.renderIdle('Starting the HOL server for this file…');
+            return;
+        }
         this.render(reply);
     }
 
-    private render(reply: GoalStateResponse | null | undefined): void {
+    private render(reply: GoalStateResponse | null): void {
         if (!reply) {
             this.renderIdle('No goal state at this position.');
             return;

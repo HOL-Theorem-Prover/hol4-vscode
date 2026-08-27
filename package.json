@@ -175,12 +175,12 @@
             },
             {
                 "command": "hol4-mode.lsp.restart",
-                "title": "Restart LSP server",
+                "title": "Restart LSP server for the active script",
                 "category": "HOL"
             },
             {
                 "command": "hol4-mode.lsp.showOutput",
-                "title": "Show LSP output channel",
+                "title": "Show LSP output channel for the active script",
                 "category": "HOL"
             }
         ],
@@ -338,12 +338,12 @@
                 "hol4-mode.lsp.enabled": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Enable the HOL4 LSP client (spawns `bin/hol lsp`). Diagnostics, hover, and the HOL Goals pane require this."
+                    "description": "Enable the HOL4 LSP client. One `bin/hol lsp` process is started per visible `*Script.sml` file, and stopped when the file is closed. Diagnostics, hover, and the HOL Goals pane require this."
                 },
                 "hol4-mode.lsp.executable": {
                     "type": "string",
                     "default": "",
-                    "description": "Optional path to `bin/hol` for the LSP server. Empty falls back to `hol4-mode.holdir/bin/hol`, then `$HOLDIR/bin/hol`."
+                    "description": "Optional path to `bin/hol` for the LSP servers. Empty falls back to `hol4-mode.holdir/bin/hol`, then `$HOLDIR/bin/hol`."
                 }
             }
         },

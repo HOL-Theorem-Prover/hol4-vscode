@@ -5,7 +5,7 @@ import { HOLIDE } from './holIDE';
 import { HOLExtensionContext } from './extensionContext';
 import { log, error, holdir, hol4selector } from './common';
 import { AbbreviationFeature } from './abbreviations';
-import { LspClient } from './lspClient';
+import { LspClients } from './lspClient';
 import { GoalsView } from './goalsView';
 
 
@@ -54,7 +54,7 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
 }
 
 let holExtensionContext: HOLExtensionContext | undefined;
-let lspClient: LspClient | undefined;
+let lspClients: LspClients | undefined;
 let goalsView: GoalsView | undefined;
 export function activate(context: vscode.ExtensionContext) {
     holExtensionContext = initialize(context);
@@ -66,10 +66,10 @@ export function activate(context: vscode.ExtensionContext) {
     const lspEnabled = vscode.workspace.getConfiguration('hol4-mode')
         .get<boolean>('lsp.enabled', true);
     if (lspEnabled) {
-        lspClient = new LspClient(holExtensionContext.holPath);
-        lspClient.start();
-        context.subscriptions.push(lspClient);
-        goalsView = new GoalsView(lspClient);
+        lspClients = new LspClients(holExtensionContext.holPath);
+        lspClients.start();
+        context.subscriptions.push(lspClients);
+        goalsView = new GoalsView(lspClients);
         context.subscriptions.push(goalsView);
     }
 
@@ -226,11 +226,11 @@ export function activate(context: vscode.ExtensionContext) {
         }),
 
         vscode.commands.registerCommand('hol4-mode.lsp.restart', () => {
-            lspClient?.restart();
+            lspClients?.restartActive();
         }),
 
         vscode.commands.registerCommand('hol4-mode.lsp.showOutput', () => {
-            lspClient?.showOutput();
+            lspClients?.showOutput();
         }),
 
         vscode.languages.registerHoverProvider(

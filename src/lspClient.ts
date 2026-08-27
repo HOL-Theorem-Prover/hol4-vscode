@@ -276,7 +276,16 @@ export class LspClients implements vscode.Disposable {
 
         // No `transport:` field: the client defaults to stdio without
         // appending the `--stdio` flag that `bin/hol lsp` rejects.
-        const serverOptions: ServerOptions = { command: exe, args: ['lsp'] };
+        const serverOptions: ServerOptions = {
+            command: exe,
+            args: ['lsp'],
+            // `get_heap_name` in tools-poly/hol.ML reads the
+            // `Holmakefile` in the server's working directory, and
+            // Holmakefiles do not govern subdirectories.  Inheriting
+            // VS Code's cwd boots the wrong heap for any script in a
+            // directory with its own HOLHEAP.
+            options: { cwd: path.dirname(fsPath) },
+        };
 
         const clientOptions: LanguageClientOptions = {
             // Pinned to this one path.  Selecting by language would

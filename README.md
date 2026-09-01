@@ -27,6 +27,24 @@ client that speaks to `bin/hol lsp`.  This delivers:
   on macOS) to open a pane that follows the cursor and shows the
   proof state at each tactic step inside a `Proof … QED` block.
 
+### A script whose ancestors will not load is left alone
+
+The server refuses to compile a script that names a theory or library
+it cannot load — one that has not been built yet, or that raises on
+load.  With an ancestor missing there is nothing to elaborate the file
+against, so every name the file takes from that ancestor would draw
+its own error; instead you get one diagnostic, on the `Ancestors` /
+`Libs` entry that named the missing module, and nothing else in the
+file is compiled.  The status bar reads `HOL LSP: not compiling` and
+the Goals pane says why rather than reporting "no goal state at this
+position".
+
+Build the missing dependency with `Holmake`, then edit the file's
+`Ancestors` / `Libs` header — any change to that list, including a
+change and its undo — and the server tries again.  If the header is
+already right, `HOL: Compile the active script again` retries without
+touching the file.
+
 ### One server per script
 
 A `bin/hol lsp` process can serve exactly one theory script for its
@@ -63,8 +81,9 @@ Related settings:
 
 Palette commands: `HOL: Toggle HOL Goals pane`, `HOL: Restart LSP
 server for the active script`, `HOL: Show LSP output channel for the
-active script`.  The last two, and the status bar item, act on the
-server belonging to the script in the active editor.
+active script`, `HOL: Compile the active script again`.  All but the
+first, and the status bar item, act on the server belonging to the
+script in the active editor.
 
 ## Extension Settings
 

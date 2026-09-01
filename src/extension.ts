@@ -233,6 +233,10 @@ export function activate(context: vscode.ExtensionContext) {
             lspClients?.showOutput();
         }),
 
+        vscode.commands.registerCommand('hol4-mode.lsp.retryCompile', () => {
+            lspClients?.retryCompileActive();
+        }),
+
         vscode.languages.registerHoverProvider(
             hol4selector,
             holExtensionContext,

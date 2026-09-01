@@ -69,6 +69,18 @@ export class GoalsView implements vscode.Disposable {
     private async refresh(editor: vscode.TextEditor): Promise<void> {
         if (!this.panel) return;
         const doc = editor.document;
+        // Nothing in this file has been compiled, so there is no goal
+        // state anywhere in it.  Say why, rather than letting the
+        // request come back null and reporting "no goal state at this
+        // position" -- which would send the user looking for the fault
+        // in their proof.
+        const blocked = this.clients.blockedFor(doc);
+        if (blocked) {
+            this.renderIdle(`Not compiling this file: ${blocked}. ` +
+                'Build the dependency, then edit the Ancestors / Libs ' +
+                'header (or run "HOL: Compile the active script again").');
+            return;
+        }
         const pos = editor.selection.active;
         // VS Code positions are UTF-16 code units; server expects
         // UTF-8 byte offsets, so a line containing ∀ / ‘’ / ⇒ etc.

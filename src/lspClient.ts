@@ -77,6 +77,16 @@ export interface GoalStateResponse {
     error?: string;
 }
 
+/** Payload of `$/compileBlocked`: the server is not compiling this
+ * file, because a theory or library its header declares could not be
+ * loaded.  `modules` is the declared dependency list whose change
+ * lifts the block; `message` says what failed. */
+export interface CompileBlockedParams {
+    uri: string;
+    modules: string[];
+    message: string;
+}
+
 function resolveHolExecutable(fallbackHoldir: string): string | undefined {
     const cfg = vscode.workspace.getConfiguration('hol4-mode');
     const override = cfg.get<string>('lsp.executable');
@@ -114,10 +124,17 @@ interface ScriptClient {
     output: vscode.OutputChannel;
     /** `onDidChangeState` subscription; lives and dies with the client. */
     state: vscode.Disposable;
+    /** Why the server is not compiling this script, or undefined if it
+     * is.  Set from `$/compileBlocked` and cleared by the compile that
+     * gets through; see `blockedFor`. */
+    blocked?: string;
+    /** `$/compileBlocked` / `$/compileCompleted` subscriptions. */
+    notifications: vscode.Disposable[];
 }
 
 function disposeScriptClient(entry: ScriptClient): void {
     entry.state.dispose();
+    for (const d of entry.notifications) d.dispose();
     // Each server holds a HOL heap, so a leaked process is hundreds
     // of megabytes, not a rounding error.
     entry.client.stop()
@@ -227,6 +244,43 @@ export class LspClients implements vscode.Disposable {
             : 'HOL LSP: open a theory script to see its server output.');
     }
 
+    /** Why the server is not compiling `doc`, or undefined if it is.
+     *
+     * The server refuses to compile a script whose declared ancestors
+     * or libraries could not be loaded: with one of them missing there
+     * is nothing to elaborate the file against, so it reports the load
+     * failure on the header entry that named it and waits for that
+     * header to change.  Nothing else in the file is compiled, and no
+     * goal state exists anywhere in it. */
+    blockedFor(doc: vscode.TextDocument): string | undefined {
+        return this.clients.get(doc.uri.toString())?.blocked;
+    }
+
+    /** Ask the active script's server to compile it again.
+     *
+     * The server lifts a block by itself when the `Ancestors` / `Libs`
+     * header changes.  This is for the other case: the missing
+     * ancestor has been built outside the editor and the header is
+     * already what it should be. */
+    retryCompileActive(): void {
+        const doc = vscode.window.activeTextEditor?.document;
+        if (!doc || !isHolScript(doc)) {
+            vscode.window.showInformationMessage(
+                'HOL LSP: the active editor is not a HOL theory script.');
+            return;
+        }
+        const entry = this.clients.get(doc.uri.toString());
+        if (!entry || entry.client.state !== State.Running) {
+            vscode.window.showInformationMessage(
+                'HOL LSP: no server is running for this script.');
+            return;
+        }
+        this.setBlocked(doc.uri.toString(), undefined);
+        entry.client.sendNotification('$/hol/retryCompile',
+            { textDocument: { uri: doc.uri.toString() } })
+            .catch((err) => error(`LSP retryCompile failed: ${err}`));
+    }
+
     /** Send `method` to the server owning `doc`, if it is running. */
     async sendRequest<T>(
         doc: vscode.TextDocument,
@@ -313,7 +367,32 @@ export class LspClients implements vscode.Disposable {
             this.refreshStatus();
             this.stateChanged.fire();
         });
-        return { client, output, state };
+        // Registered before `start`, which the client allows: handlers
+        // added early are held and attached to the connection when it
+        // comes up.  A `$/compileBlocked` can arrive on the very first
+        // didOpen, so a handler installed afterwards would miss it.
+        const key = doc.uri.toString();
+        const notifications = [
+            client.onNotification('$/compileBlocked',
+                (params: CompileBlockedParams) =>
+                    this.setBlocked(key, params.message)),
+            // The file compiled, so whatever it was blocked on is
+            // resolved.
+            client.onNotification('$/compileCompleted',
+                () => this.setBlocked(key, undefined)),
+        ];
+        return { client, output, state, notifications };
+    }
+
+    /** Record (or clear) why `key`'s script is not being compiled, and
+     * nudge consumers -- the goals pane reads this to say what is
+     * wrong instead of asking for a goal state that cannot exist. */
+    private setBlocked(key: string, message: string | undefined): void {
+        const entry = this.clients.get(key);
+        if (!entry || entry.blocked === message) return;
+        entry.blocked = message;
+        this.refreshStatus();
+        this.stateChanged.fire();
     }
 
     private closed(doc: vscode.TextDocument): void {
@@ -345,6 +424,13 @@ export class LspClients implements vscode.Disposable {
         }
         switch (entry.client.state) {
             case State.Running:
+                // A running server that is not compiling this file is
+                // the one state the user cannot infer from the editor:
+                // there is one diagnostic and then nothing happens.
+                if (entry.blocked) {
+                    this.showStatus('HOL LSP: not compiling', true);
+                    break;
+                }
                 this.showStatus('HOL LSP', false);
                 break;
             case State.Starting:

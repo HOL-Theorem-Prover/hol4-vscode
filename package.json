@@ -12,7 +12,7 @@
         "Programming Languages"
     ],
     "activationEvents": [
-        "onLanguage:sml"
+        "onLanguage:hol4"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -167,6 +167,26 @@
                 "title": "Collapse all cells",
                 "icon": "$(collapse-all)",
                 "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.lsp.toggleGoalsPane",
+                "title": "Toggle HOL Goals pane",
+                "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.lsp.restart",
+                "title": "Restart LSP server for the active script",
+                "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.lsp.showOutput",
+                "title": "Show LSP output channel for the active script",
+                "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.lsp.retryCompile",
+                "title": "Compile the active script again",
+                "category": "HOL"
             }
         ],
         "keybindings": [
@@ -271,6 +291,12 @@
                 "key": "ctrl+h ctrl+a",
                 "mac": "cmd+h cmd+a",
                 "when": "editorLangId == hol4"
+            },
+            {
+                "command": "hol4-mode.lsp.toggleGoalsPane",
+                "key": "ctrl+h ctrl+g",
+                "mac": "cmd+h cmd+g",
+                "when": "editorLangId == hol4"
             }
         ],
         "menus": {
@@ -313,6 +339,16 @@
                 "hol4-mode.holdir": {
                     "type": "string",
                     "description": "Set HOL installation directory"
+                },
+                "hol4-mode.lsp.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable the HOL4 LSP client. One `bin/hol lsp` process is started per visible `*Script.sml` file, and stopped when the file is closed. Diagnostics, hover, and the HOL Goals pane require this."
+                },
+                "hol4-mode.lsp.executable": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Optional path to `bin/hol` for the LSP servers. Empty falls back to `hol4-mode.holdir/bin/hol`, then `$HOLDIR/bin/hol`."
                 }
             }
         },
@@ -332,6 +368,9 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
         "@types/mocha": "^9.0.0",

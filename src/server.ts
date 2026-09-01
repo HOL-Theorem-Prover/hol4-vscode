@@ -393,7 +393,7 @@ function parsePretty(value: PrettyString): Pretty {
     }
 }
 
-const escapeHtml = (s: string): string =>
+export const escapeHtml = (s: string): string =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 

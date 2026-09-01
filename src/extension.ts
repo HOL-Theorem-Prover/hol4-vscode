@@ -5,6 +5,8 @@ import { HOLIDE } from './holIDE';
 import { HOLExtensionContext } from './extensionContext';
 import { log, error, holdir, hol4selector } from './common';
 import { AbbreviationFeature } from './abbreviations';
+import { LspClients } from './lspClient';
+import { GoalsView } from './goalsView';
 
 
 /**
@@ -52,11 +54,23 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
 }
 
 let holExtensionContext: HOLExtensionContext | undefined;
+let lspClients: LspClients | undefined;
+let goalsView: GoalsView | undefined;
 export function activate(context: vscode.ExtensionContext) {
     holExtensionContext = initialize(context);
     if (!holExtensionContext) {
         error("Unable to initialize extension.");
         return;
+    }
+
+    const lspEnabled = vscode.workspace.getConfiguration('hol4-mode')
+        .get<boolean>('lsp.enabled', true);
+    if (lspEnabled) {
+        lspClients = new LspClients(holExtensionContext.holPath);
+        lspClients.start();
+        context.subscriptions.push(lspClients);
+        goalsView = new GoalsView(lspClients);
+        context.subscriptions.push(goalsView);
     }
 
     let commands = [
@@ -205,6 +219,22 @@ export function activate(context: vscode.ExtensionContext) {
 
         vscode.commands.registerCommand('hol4-mode.refreshIndex', () => {
             holExtensionContext?.holIDE?.refreshIndex();
+        }),
+
+        vscode.commands.registerCommand('hol4-mode.lsp.toggleGoalsPane', () => {
+            goalsView?.toggle();
+        }),
+
+        vscode.commands.registerCommand('hol4-mode.lsp.restart', () => {
+            lspClients?.restartActive();
+        }),
+
+        vscode.commands.registerCommand('hol4-mode.lsp.showOutput', () => {
+            lspClients?.showOutput();
+        }),
+
+        vscode.commands.registerCommand('hol4-mode.lsp.retryCompile', () => {
+            lspClients?.retryCompileActive();
         }),
 
         vscode.languages.registerHoverProvider(

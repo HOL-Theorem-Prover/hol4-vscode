@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import { HOLIDE } from './holIDE';
 import { HOLExtensionContext } from './extensionContext';
-import { log, error, holdir, hol4selector } from './common';
+import { error, holdir } from './common';
 import { AbbreviationFeature } from './abbreviations';
 import { LspClients } from './lspClient';
 import { GoalsView } from './goalsView';
@@ -27,20 +25,6 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
         holPath = process.env[holPath.slice(1)] ?? holPath;
     }
 
-    let holIDE: HOLIDE | undefined;
-    if (vscode.workspace.getConfiguration('hol4-mode').get('indexing')
-        && vscode.workspace.workspaceFolders?.length) {
-        // Get the path to the current workspace root. This class is constructed
-        // by the extension, which is activated by opening a HOL4 document. By
-        // this time there should be a workspace.
-        if (vscode.workspace.workspaceFolders.length == 1) {
-            const workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-            holIDE = new HOLIDE(context, holPath, workspacePath);
-        } else {
-            vscode.window.showErrorMessage('HOL4 mode: multi-root workspaces not supported');
-            error('workspace has too many roots');
-        }
-    }
     // Cleanup orphaned tabs from previous session
     for (const group of vscode.window.tabGroups.all) {
         for (const tab of group.tabs) {
@@ -50,7 +34,7 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
             }
         }
     }
-    return new HOLExtensionContext(context, holPath, holIDE);
+    return new HOLExtensionContext(context, holPath);
 }
 
 let holExtensionContext: HOLExtensionContext | undefined;
@@ -178,7 +162,6 @@ export function activate(context: vscode.ExtensionContext) {
                 await holExtensionContext?.notebook?.stop();
                 await holExtensionContext?.notebook?.start();
             })();
-            holExtensionContext?.holIDE?.restartServers();
         }),
 
         vscode.commands.registerCommand('hol4-mode.collapseAllCells', async () => {
@@ -187,38 +170,6 @@ export function activate(context: vscode.ExtensionContext) {
 
         vscode.commands.registerCommand('hol4-mode.expandAllCells', async () => {
             await holExtensionContext?.notebook?.expandAll();
-        }),
-
-        // Refresh the import list for the currently active document.
-        vscode.window.onDidChangeActiveTextEditor(editor => {
-            if (editor) {
-                const doc = editor.document;
-                if (vscode.languages.match(hol4selector, doc)) {
-                    (async () => {
-                        const server = await holExtensionContext?.holIDE?.startServer(doc);
-                        if (server) await holExtensionContext?.holIDE?.compileDocument(server, doc);
-                    })();
-                    holExtensionContext?.holIDE?.updateImports(doc);
-                }
-            }
-        }),
-
-        vscode.workspace.onDidSaveTextDocument(doc => {
-            if (vscode.languages.match(hol4selector, doc)) {
-                (async () => {
-                    const server = await holExtensionContext?.holIDE?.startServer(doc);
-                    if (server) await holExtensionContext?.holIDE?.compileDocument(server, doc);
-                })();
-                holExtensionContext?.holIDE?.indexDocument(doc);
-            }
-        }),
-
-        vscode.commands.registerCommand('hol4-mode.indexWorkspace', () => {
-            holExtensionContext?.holIDE?.indexWorkspace();
-        }),
-
-        vscode.commands.registerCommand('hol4-mode.refreshIndex', () => {
-            holExtensionContext?.holIDE?.refreshIndex();
         }),
 
         vscode.commands.registerCommand('hol4-mode.lsp.toggleGoalsPane', () => {
@@ -237,33 +188,13 @@ export function activate(context: vscode.ExtensionContext) {
             lspClients?.retryCompileActive();
         }),
 
-        vscode.languages.registerHoverProvider(
-            hol4selector,
-            holExtensionContext,
-        ),
-
-        vscode.languages.registerDefinitionProvider(
-            hol4selector,
-            holExtensionContext,
-        ),
-
-        vscode.languages.registerDocumentSymbolProvider(
-            hol4selector,
-            holExtensionContext,
-        ),
-
-        vscode.languages.registerWorkspaceSymbolProvider(
-            holExtensionContext,
-        ),
-
-        // HOL IDE commands END
-
+        // No language providers are registered here.  Hover,
+        // definition, documentSymbol, workspaceSymbol and completion
+        // all come from the language server, which
+        // vscode-languageclient wires up from the capabilities it
+        // advertises.  Registering our own would be a second answer to
+        // the same question.
         new AbbreviationFeature(),
-
-        vscode.languages.registerCompletionItemProvider(
-            hol4selector,
-            holExtensionContext,
-        ),
     ];
 
     commands.forEach((cmd) => context.subscriptions.push(cmd));

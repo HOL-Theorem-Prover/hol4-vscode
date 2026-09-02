@@ -117,16 +117,6 @@
                 "category": "HOL"
             },
             {
-                "command": "hol4-mode.indexWorkspace",
-                "title": "Index workspace for IDE",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.refreshIndex",
-                "title": "Refresh symbol index",
-                "category": "HOL"
-            },
-            {
                 "command": "hol4-mode.holmake",
                 "title": "Run Holmake in the directory of the current document",
                 "category": "HOL"
@@ -326,11 +316,6 @@
         "configuration": {
             "title": "HOL4",
             "properties": {
-                "hol4-mode.indexing": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Enable indexing of symbols"
-                },
                 "hol4-mode.rawMessages": {
                     "type": "boolean",
                     "default": false,

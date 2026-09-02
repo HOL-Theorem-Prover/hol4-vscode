@@ -59,3 +59,50 @@ export function partitionPoint(len: number, pred: (i: number) => boolean) {
 export function pluralize(n: number, stem: string, s: string = 's') {
     return `${n} ${n == 1 ? stem : stem + s}`;
 }
+
+/* String escapers.  `escapeMLString' builds SML string literals for
+ * the session's `use'/request traffic; `escapeHtml' is for the goals
+ * webview.  They lived in a `server.ts' whose server is gone. */
+export const escapeMLString = (() => {
+    const nextEscape = /[^!-~ ]|[\\"]/g;
+    const encoder = new TextEncoder();
+    const encoded = new Uint8Array(4);
+    return (str: string) => {
+        const buffer = ['"'];
+        let match;
+        let index = 0;
+        while ((match = nextEscape.exec(str))) {
+            if (index < match.index) buffer.push(str.substring(index, match.index));
+            index = nextEscape.lastIndex;
+            const code = str.codePointAt(match.index)!;
+            switch (code) {
+                case 7: buffer.push('\\a'); break;
+                case 8: buffer.push('\\b'); break;
+                case 9: buffer.push('\\t'); break;
+                case 10: buffer.push('\\n'); break;
+                case 11: buffer.push('\\v'); break;
+                case 12: buffer.push('\\f'); break;
+                case 13: buffer.push('\\r'); break;
+                case 34: buffer.push('\\"'); break;
+                case 92: buffer.push('\\\\'); break;
+                default: {
+                    if (code < 32) {
+                        buffer.push('\\^', String.fromCharCode(code + 64));
+                    } else {
+                        const size = encoder.encodeInto(str.charAt(match.index), encoded).written;
+                        for (const n of encoded.subarray(0, size)) {
+                            buffer.push(`\\${n}`); // note: n >= 128 so this is always 3 chars
+                        }
+                    }
+                }
+            }
+        }
+        if (index < str.length) buffer.push(str.substring(index));
+        buffer.push('"');
+        return buffer.join('');
+    }
+})();
+
+export const escapeHtml = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/'/g, '&#39;').replace(/"/g, '&quot;');

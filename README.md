@@ -3,8 +3,9 @@
 Support for working with the [HOL4 interactive theorem prover](https://hol-theorem-prover.org) in
 Visual Studio Code. This plugin provides the required functionality to maintain a HOL session in an
 editor window, basic syntax highlighting, and basic unicode input completion.
-The plugin can index source files in the users current directory and provides basic
-go-to-definition functionality for theorems, function definitions, and inductive relations.
+Everything else — diagnostics, hover, go-to-definition, the outline,
+symbol search and completion — comes from the HOL language server; see
+below.
 
 ## Requirements
 
@@ -20,12 +21,31 @@ client that speaks to `bin/hol lsp`.  This delivers:
 
 - **Compile-driven diagnostics** in the Problems panel and inline
   squiggles as you edit.
-- **LSP-provided hover** with type information from the running HOL
-  session (in addition to the existing symbol-index hover, which
-  keeps working).
+- **Hover** with type information from the running HOL session, and
+  a theorem's statement when the cursor is on one.
+- **Outline, symbol search and completion** — `Ctrl+Shift+O` for a
+  file's declarations, `Ctrl+T` to search stored theorems, and
+  completion of names in scope.  Symbol search covers the theories
+  this script loads and, beyond them, any theory built in the project:
+  those are marked *not an ancestor*, since using one means adding it
+  to `Ancestors` first.
 - **HOL Goals side pane** — press `Ctrl+H Ctrl+G` (or `Cmd+H Cmd+G`
   on macOS) to open a pane that follows the cursor and shows the
   proof state at each tactic step inside a `Proof … QED` block.
+
+### Positions and the pane width
+
+The server picks its LSP position encoding from what this client
+advertises, which is `utf-16` — so hover, go-to-definition and the
+squiggles in the Problems panel land on the right characters even on
+lines carrying `∀`, `⇒` or `‘…’`, which used to be off by the
+difference between bytes and code units.  Nothing in the extension
+translates positions any more.
+
+The Goals pane measures its own width and tells the server, so HOL's
+pretty printer breaks lines to fit the pane you actually have rather
+than a fixed 75 columns.  Resizing the pane re-renders at the new
+width.
 
 ### A script whose ancestors will not load is left alone
 
@@ -87,8 +107,12 @@ script in the active editor.
 
 ## Extension Settings
 
-It is possible to toggle the indexing of theorems and definitions in the workspace from the settings
-by the key: `hol4-mode.indexing` to `false`.
+There is no longer a `hol4-mode.indexing` setting.  The symbol
+indexer it governed has been removed: the language server answers the
+same requests from HOL itself rather than from a regex scan of the
+sources, so there is one implementation and it is the one that knows
+what the names mean.  Any `.hol-vscode` directory left in a workspace
+(or in `$HOLDIR`) is now unused and can be deleted.
 
 Suggested additions to `settings.json` for use with [VSCodeVim](https://github.com/VSCodeVim/Vim),
 somewhat corresponding to the HOL4 Vim mode defaults:
@@ -180,8 +204,8 @@ somewhat corresponding to the HOL4 Vim mode defaults:
 - `load` calls are not inserted when calls to qualified ML code is made.
 - Location pragmas are not inserted at calls to `{Co}Inductive`, `Datatype`,
   `Theorem`, nor in term quotations.
-- Definitions created with `Define` are not properly indexed.
-- Automatically generated theorems (for example, inductions) are not properly
-  indexed.
-- The hover/symbol-providers won't work on fully qualified identifiers (such as
-  `myTheory.my_theorem`).
+- Symbol search reaches only theories that have been built; a script
+  never compiled by `Holmake` contributes only the declarations of the
+  buffers you have open.
+- `.sig` files and library `.sml` files get no IDE features: the
+  server binds to one theory script per process.

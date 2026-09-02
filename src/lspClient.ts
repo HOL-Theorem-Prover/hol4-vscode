@@ -9,45 +9,6 @@ import {
 } from 'vscode-languageclient/node';
 import { error } from './common';
 
-/**
- * Shape of the tiny slice of `LanguageClient` we monkey-patch.
- * Kept narrow so future dep upgrades that break these hooks surface
- * as compile errors rather than silent behaviour changes.
- */
-interface PatchableConnection {
-    initialize(params: unknown): Promise<{
-        capabilities?: { positionEncoding?: unknown }
-    }>;
-}
-interface PatchableClient {
-    createConnection?: (...args: unknown[]) => Promise<PatchableConnection>;
-}
-
-/** Strip server-advertised `positionEncoding` so v9 client accepts
- * a utf-8-declaring server.  Client falls back to its utf-16
- * default; positions on non-ASCII lines are then translated on
- * demand by callers (see goalsView.utf16ToUtf8ByteOffset).
- * Must be applied to every client we create: it only misbehaves on
- * lines carrying non-ASCII, which in HOL is most interesting
- * lines (`‘…’`, `⇒`, `∀`). */
-function patchConnectionForPositionEncoding(client: LanguageClient): void {
-    const patch = client as unknown as PatchableClient;
-    const origCreateConnection = patch.createConnection?.bind(patch);
-    if (typeof origCreateConnection !== 'function') return;
-    patch.createConnection = async (...args: unknown[]) => {
-        const conn = await origCreateConnection(...args);
-        const origInitialize = conn.initialize.bind(conn);
-        conn.initialize = async (params: unknown) => {
-            const result = await origInitialize(params);
-            if (result?.capabilities?.positionEncoding !== undefined) {
-                delete result.capabilities.positionEncoding;
-            }
-            return result;
-        };
-        return conn;
-    };
-}
-
 /** Position argument for the `$/hol/goalState` custom request. */
 export interface GoalStatePosition {
     line: number;
@@ -57,6 +18,9 @@ export interface GoalStatePosition {
 export interface GoalStateParams {
     textDocument: { uri: string };
     position: GoalStatePosition;
+    /** Column width to render the goal state at.  Omitted means the
+     * server's own default (75). */
+    width?: number;
 }
 
 export interface Goal {
@@ -362,7 +326,6 @@ export class LspClients implements vscode.Disposable {
         const client = new LanguageClient(
             `hol4-lsp:${fsPath}`, `HOL4 LSP: ${rel}`,
             serverOptions, clientOptions);
-        patchConnectionForPositionEncoding(client);
         const state = client.onDidChangeState(() => {
             this.refreshStatus();
             this.stateChanged.fire();

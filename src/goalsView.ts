@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { escapeHtml } from './server';
+import { escapeHtml } from './common';
 import {
     GoalStateParams,
     GoalStateResponse,
@@ -9,11 +9,17 @@ import {
 
 const DEBOUNCE_MS = 150;
 
+/** Characters in the hidden width-measuring ruler. */
+const RULER_CHARS = 80;
+
 /** Side-pane webview rendering `$/hol/goalState' for the cursor
  * position; refreshed on debounced selection/editor changes. */
 export class GoalsView implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private timer: NodeJS.Timeout | undefined;
+    /** Pane width in characters, as last measured by the page.  75 is
+     * HOL's own default, and what the server falls back to. */
+    private cols = 75;
     private readonly disposables: vscode.Disposable[] = [];
 
     constructor(private readonly clients: LspClients) {
@@ -40,11 +46,24 @@ export class GoalsView implements vscode.Disposable {
             'hol4.goalsPane',
             'HOL Goals',
             { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { retainContextWhenHidden: true });
+            // Scripts: the pane's width in characters is not something
+            // the extension host can ask for, so the page measures a
+            // monospace ruler and posts the answer back.
+            { retainContextWhenHidden: true, enableScripts: true });
         this.panel.onDidDispose(() => {
             if (this.timer) clearTimeout(this.timer);
             this.timer = undefined;
             this.panel = undefined;
+        });
+        this.panel.webview.onDidReceiveMessage((m) => {
+            if (!m || m.type !== 'cols') return;
+            const cols = Math.max(20, Math.min(300, Math.floor(m.cols)));
+            if (cols === this.cols) return;
+            this.cols = cols;
+            // Re-ask at the new width: the break positions are the
+            // server's to choose, so a resize needs a fresh render.
+            const ed = vscode.window.activeTextEditor;
+            if (ed) this.schedule(ed);
         });
         this.renderIdle('Move the cursor into a Proof … QED body to see goals.');
         if (vscode.window.activeTextEditor) {
@@ -82,15 +101,15 @@ export class GoalsView implements vscode.Disposable {
             return;
         }
         const pos = editor.selection.active;
-        // VS Code positions are UTF-16 code units; server expects
-        // UTF-8 byte offsets, so a line containing ∀ / ‘’ / ⇒ etc.
-        // otherwise lands the walker on the wrong step.
+        // No translation: the server picks its position encoding from
+        // the `positionEncodings` this client advertises, which is
+        // utf-16, so `character` means what VS Code means by it.
         const params: GoalStateParams = {
             textDocument: { uri: doc.uri.toString() },
-            position: {
-                line: pos.line,
-                character: utf16ToUtf8ByteOffset(doc, pos.line, pos.character),
-            },
+            position: { line: pos.line, character: pos.character },
+            // Only this side knows how wide the pane is, so the server
+            // cannot pick the line breaking without being told.
+            width: this.cols,
         };
         let reply: GoalStateResponse | null | undefined;
         try {
@@ -167,16 +186,6 @@ export class GoalsView implements vscode.Disposable {
         if (!this.panel) return;
         this.panel.webview.html = wrap(body);
     }
-}
-
-function utf16ToUtf8ByteOffset(
-    doc: vscode.TextDocument,
-    line: number,
-    character: number
-): number {
-    if (line < 0 || line >= doc.lineCount) return character;
-    const prefix = doc.lineAt(line).text.substring(0, character);
-    return Buffer.byteLength(prefix, 'utf8');
 }
 
 /** Translate the VT100 SGR escapes HOL's `PPBackEnd.vt100_terminal`
@@ -259,5 +268,30 @@ function wrap(body: string): string {
   .ansi-fg-b5 { color: var(--vscode-terminal-ansiBrightMagenta, #d670d6); }
   .ansi-fg-b6 { color: var(--vscode-terminal-ansiBrightCyan, #29b8db); }
   .ansi-fg-b7 { color: var(--vscode-terminal-ansiBrightWhite, #ffffff); }
-</style></head><body>${body}</body></html>`;
+  /* Measured, not shown: the ruler gives the width of one character
+     in the pane's own font, which is the only way to turn the pane's
+     pixel width into the column count the server wraps at. */
+  #ruler { position: absolute; visibility: hidden; white-space: pre;
+           font-family: inherit; font-size: inherit; }
+</style></head><body>
+<span id="ruler">${'0'.repeat(RULER_CHARS)}</span>
+${body}
+<script>
+  const vs = acquireVsCodeApi();
+  let last = 0;
+  function report() {
+    const ruler = document.getElementById('ruler');
+    const per = ruler.getBoundingClientRect().width / ${RULER_CHARS};
+    if (!(per > 0)) return;
+    // Leave a character of slack: a line rendered exactly as wide as
+    // the pane wraps anyway on some zoom levels.
+    const cols = Math.floor(document.body.clientWidth / per) - 1;
+    if (cols === last) return;
+    last = cols;
+    vs.postMessage({ type: 'cols', cols: cols });
+  }
+  window.addEventListener('resize', report);
+  report();
+</script>
+</body></html>`;
 }

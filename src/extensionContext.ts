@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { log, error, EXTENSION_ID, KERNEL_ID } from './common';
 import { HolNotebook } from './notebook';
-import { HOLIDE, entryToCompletionItem, entryToSymbol, isAccessibleEntry } from './holIDE';
 
 /**
  * Generate a HOL lexer location pragma from a vscode Position value.
@@ -35,44 +34,6 @@ function addLocationPragma(text: string, position: vscode.Position) {
         text;
     return data;
 }
-
-// /**
-//  * Preprocess any `open` declarations in a string. Any declarations are sorted,
-//  * and for each declaration a `load`-call is generated. If there are no `open`s
-//  * in the text, then this does nothing.
-//  */
-// function processOpens(text: string): string {
-//     text = removeComments(text).replace(/\n\s*\n/g, '\n').replace(/\r/g, '');
-//     let index = 0;
-//     let buffer = [];
-//     let quiet = false;
-//     function setQuiet(q: boolean) {
-//         if (quiet != q) {
-//             buffer.push('\nval _ = HOL_Interactive.toggle_quietdec();\n');
-//         }
-//         quiet = q;
-//     }
-//     const theoriesSet = new Set<string>();
-//     getImports(text, s => theoriesSet.add(s), (start, end) => {
-//         const mid = text.substring(index, start);
-//         if (/[^\s;]/.test(mid)) setQuiet(false);
-//         buffer.push(mid);
-//         setQuiet(true);
-//         buffer.push(text.substring(start, end));
-//         index = end;
-//     });
-//     if (!theoriesSet.size) return text;
-//     const theories: string[] = [];
-//     theoriesSet.forEach(s => theories.push(s));
-//
-//     setQuiet(false);
-//     const banner = `val _ = print "Loading: ${theories.join(' ')} ...\\n";`;
-//     const loads = theories.map((s) => `val _ = load "${s}";\n`);
-//     const bannerDone = 'val _ = print "Done loading theories.\\n"\n';
-//     buffer.unshift(banner, ...loads);
-//     buffer.push(bannerDone, text.substring(index));
-//     return buffer.join('');
-// }
 
 /**
  * Preprocess a tactic selection by removing leading tacticals and trailing
@@ -197,9 +158,7 @@ function extractSubgoal(editor: vscode.TextEditor): [string, string] | undefined
     return;
 }
 
-export class HOLExtensionContext implements
-    vscode.DefinitionProvider, vscode.HoverProvider, vscode.DocumentSymbolProvider,
-    vscode.WorkspaceSymbolProvider, vscode.CompletionItemProvider {
+export class HOLExtensionContext {
 
     /** Currently active notebook editor (if any). */
     public notebook?: HolNotebook;
@@ -208,10 +167,7 @@ export class HOLExtensionContext implements
         private context: vscode.ExtensionContext,
 
         /** Path to the HOL installation to use. */
-        public holPath: string,
-
-        /** Current IDE class instance. */
-        public holIDE?: HOLIDE
+        public holPath: string
     ) { }
 
     /** Returns whether the current session is active. If it is not active, then
@@ -518,113 +474,12 @@ export class HOLExtensionContext implements
         await this.notebook!.send('Globals.show_assums := not (!Globals.show_assums)', false, true);
     }
 
-    /**
-     * See {@link vscode.HoverProvider}.
+    /* The IDE providers used to live here, fed by the symbol
+     * indexer.  They belong to the language server now: it advertises
+     * hover, definition, documentSymbol, workspaceSymbol and
+     * completion, and vscode-languageclient registers them from those
+     * capabilities.  One implementation, and it is the one with HOL
+     * loaded.
      */
-    async provideHover(document: vscode.TextDocument, position: vscode.Position, _token: vscode.CancellationToken) {
-        const results: vscode.MarkdownString[] = [];
-        const sels = vscode.window.activeTextEditor?.selections;
-        let inRange = new vscode.Range(position, position);
-        if (sels) {
-            for (const sel of sels) {
-                if (sel.contains(position)) {
-                    inRange = sel;
-                    break;
-                }
-            }
-        }
-        const promise = this.holIDE?.getHoverInfo(document, inRange, results);
-        const wordRange = document.getWordRangeAtPosition(position);
-        const word = document.getText(wordRange);
-        const entry = this.holIDE?.findEntry(entry =>
-            entry.name === word &&
-            isAccessibleEntry(entry, this.holIDE!.imports[document.uri.toString()], document));
-        const range = await promise?.catch();
-        if (entry) {
-            const markdownString = new vscode.MarkdownString();
-            markdownString.appendMarkdown(`**${entry.type}:** ${entry.name}\n\n`);
-            markdownString.appendCodeblock(entry.statement);
-            results.push(markdownString);
-        }
-        if (results) return new vscode.Hover(results, range ?? wordRange);
-    }
-
-    /**
-     * See {@link vscode.DefinitionProvider}.
-     */
-    async provideDefinition(
-        document: vscode.TextDocument,
-        position: vscode.Position,
-        _token: vscode.CancellationToken,
-    ): Promise<vscode.DefinitionLink[]> {
-        const promise = this.holIDE?.gotoDefinition(document, position);
-        const wordRange = document.getWordRangeAtPosition(position);
-        const word = document.getText(wordRange);
-        const entry = this.holIDE?.findEntry(entry =>
-            entry.name === word &&
-            isAccessibleEntry(entry, this.holIDE!.imports[document.uri.toString()], document));
-        const defns: vscode.DefinitionLink[] = (await promise?.catch()) ?? [];
-        if (defns.length == 0 && entry) {
-            const position = new vscode.Position(entry.line - 1, 0);
-            defns.push({
-                targetUri: vscode.Uri.file(entry.file),
-                targetRange: new vscode.Range(position, position)
-            });
-        }
-        return defns;
-    }
-
-    /**
-     * See {@link vscode.DocumentSymbolProvider}.
-     */
-    provideDocumentSymbols(
-        document: vscode.TextDocument,
-        _token: vscode.CancellationToken,
-    ) {
-        return this.holIDE?.documentEntries(document).map(entryToSymbol);
-    }
-
-    /**
-     * See {@link vscode.WorkspaceSymbolProvider<T>}.
-     */
-    provideWorkspaceSymbols(
-        query: string,
-        _token: vscode.CancellationToken,
-    ) {
-        const symbols: vscode.SymbolInformation[] = [];
-        const matcher = new RegExp(query, "i" /* ignoreCase */);
-        this.holIDE?.forEachEntry(entry => {
-            if (matcher.test(entry.name)) {
-                symbols.push(entryToSymbol(entry));
-            }
-        });
-        return symbols;
-    }
-
-    /**
-     * See {@link vscode.CompletionItemProvider}.
-     */
-    provideCompletionItems(
-        document: vscode.TextDocument,
-        position: vscode.Position,
-        _token: vscode.CancellationToken,
-        _context: vscode.CompletionContext,
-    ) {
-        const wordRange = document.getWordRangeAtPosition(position);
-        if (!wordRange) {
-            return [];
-        }
-
-        const word = document.getText(wordRange);
-        const completions: vscode.CompletionItem[] = [];
-        const matcher = new RegExp(word, "i" /* ignoreCase */);
-        this.holIDE?.forEachEntry(entry => {
-            if (matcher.test(entry.name) &&
-                isAccessibleEntry(entry, this.holIDE!.imports[document.uri.toString()], document)) {
-                completions.push(entryToCompletionItem(entry));
-            }
-        });
-        return completions;
-    }
 };
 

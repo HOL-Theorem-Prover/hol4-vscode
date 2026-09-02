@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as child_process from 'child_process';
 import * as path from 'path';
 import { error, KERNEL_ID } from './common';
-import { escapeMLString } from './server';
+import { escapeMLString } from './common';
 
 class Execution {
     private buffer: string = '';

@@ -164,7 +164,15 @@ export class LspClients implements vscode.Disposable {
             vscode.window.onDidChangeActiveTextEditor(
                 () => this.refreshStatus()),
             vscode.workspace.onDidCloseTextDocument(
-                (doc) => this.closed(doc)));
+                (doc) => this.closed(doc)),
+            // Hover width is the one setting a running server needs to
+            // hear about; it takes effect on the next hover, with no
+            // restart.
+            vscode.workspace.onDidChangeConfiguration((e) => {
+                if (e.affectsConfiguration('hol4-mode.lsp.hoverWidth')) {
+                    this.sendConfigAll();
+                }
+            }));
         this.syncVisibleEditors();
     }
 
@@ -281,7 +289,7 @@ export class LspClients implements vscode.Disposable {
         // Registered before `start` is kicked off, so a burst of
         // visibility events cannot start two servers for one file.
         this.clients.set(key, entry);
-        entry.client.start().catch((err) => {
+        entry.client.start().then(() => this.sendConfig(entry)).catch((err) => {
             error(`LSP failed to start for ${doc.uri.fsPath}: ${err}`);
             this.refreshStatus();
         });
@@ -345,6 +353,26 @@ export class LspClients implements vscode.Disposable {
                 () => this.setBlocked(key, undefined)),
         ];
         return { client, output, state, notifications };
+    }
+
+    /** Tell one server how wide to render hover text.
+     *
+     * The width has to come from us: a hover is markdown in a box, and
+     * a theorem broken to some other width breaks in the wrong places.
+     * VS Code does not expose the box's width, so this is the
+     * `hoverWidth` setting rather than a measurement -- lower it if
+     * statements come out wider than the box. */
+    private sendConfig(entry: ScriptClient): void {
+        if (entry.client.state !== State.Running) return;
+        const width = vscode.workspace.getConfiguration('hol4-mode')
+            .get<number>('lsp.hoverWidth', 72);
+        entry.client.sendRequest('$/setConfig', { hoverWidth: width })
+            .catch((err) => error(`LSP $/setConfig failed: ${err}`));
+    }
+
+    /** Re-send the configuration to every running server. */
+    private sendConfigAll(): void {
+        for (const entry of this.clients.values()) this.sendConfig(entry);
     }
 
     /** Record (or clear) why `key`'s script is not being compiled, and

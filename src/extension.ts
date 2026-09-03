@@ -55,6 +55,14 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(lspClients);
         goalsView = new GoalsView(lspClients);
         context.subscriptions.push(goalsView);
+        // The extension activates on `onLanguage:hol4', so there is a
+        // HOL buffer by now and the pane has something to be about.
+        // `preserveFocus' is set where the panel is created, so this
+        // does not take the cursor out of the editor.
+        if (vscode.workspace.getConfiguration('hol4-mode')
+                .get<boolean>('lsp.openGoalsOnStartup', true)) {
+            goalsView.show();
+        }
     }
 
     let commands = [

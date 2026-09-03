@@ -42,6 +42,17 @@ export class GoalsView implements vscode.Disposable {
             this.panel.dispose();
             return;
         }
+        this.show();
+    }
+
+    /** Open the pane if it is not already open.  Separate from
+     * `toggle` so startup can open it without the risk of closing a
+     * pane the user has already got. */
+    show(): void {
+        if (this.panel) {
+            this.panel.reveal(vscode.ViewColumn.Beside, true);
+            return;
+        }
         this.panel = vscode.window.createWebviewPanel(
             'hol4.goalsPane',
             'HOL Goals',

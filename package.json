@@ -330,12 +330,17 @@
                     "default": true,
                     "description": "Enable the HOL4 LSP client. One `bin/hol lsp` process is started per visible `*Script.sml` file, and stopped when the file is closed. Diagnostics, hover, and the HOL Goals pane require this."
                 },
+                "hol4-mode.lsp.openGoalsOnStartup": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Open the HOL Goals pane as soon as a HOL script is opened, rather than waiting for `HOL: Toggle the goals pane`. The pane opens beside the editor without taking focus."
+                },
                 "hol4-mode.lsp.hoverWidth": {
                     "type": "number",
-                    "default": 72,
+                    "default": 50,
                     "minimum": 20,
                     "maximum": 500,
-                    "description": "Column width the language server renders hover text at, including theorem statements. VS Code does not expose the width of a hover box, so this is an estimate: lower it if statements come out wider than the box, raise it to fit more on each line."
+                    "description": "Column width the language server renders hover text at, including theorem statements. VS Code does not expose the width of a hover box, so this is an estimate rather than a measurement; 50 is about what a default hover box holds. Too narrow only costs extra line breaks, while too wide makes the box scroll sideways, so err low. Raise it if you have a small font or a wide box."
                 },
                 "hol4-mode.lsp.executable": {
                     "type": "string",

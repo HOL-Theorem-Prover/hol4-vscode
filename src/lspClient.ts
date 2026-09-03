@@ -45,6 +45,22 @@ export interface GoalStateResponse {
  * file, because a theory or library its header declares could not be
  * loaded.  `modules` is the declared dependency list whose change
  * lifts the block; `message` says what failed. */
+/** One entry of a `$/proofStates` batch: what the pool now thinks of
+ * the proof whose declaration starts at `pos`.  `detail` is present
+ * only for the three verdicts that need attention. */
+export interface ProofState {
+    pos: { line: number; character: number };
+    name: string;
+    status: 'checking' | 'proved' | 'failed' | 'suspended' | 'diverged'
+          | 'cheated';
+    detail?: string;
+}
+
+export interface ProofStatesParams {
+    uri: string;
+    states: ProofState[];
+}
+
 export interface CompileBlockedParams {
     uri: string;
     modules: string[];
@@ -92,6 +108,10 @@ interface ScriptClient {
      * is.  Set from `$/compileBlocked` and cleared by the compile that
      * gets through; see `blockedFor`. */
     blocked?: string;
+    /** What the proof-checking pool is doing, by theorem name.
+     * `$/proofStates` is a transition stream -- the server announces
+     * each change and never sends a snapshot -- so this accumulates. */
+    proofs?: Map<string, string>;
     /** `$/compileBlocked` / `$/compileCompleted` subscriptions. */
     notifications: vscode.Disposable[];
 }
@@ -352,6 +372,9 @@ export class LspClients implements vscode.Disposable {
             // resolved.
             client.onNotification('$/compileCompleted',
                 () => this.setBlocked(key, undefined)),
+            client.onNotification('$/proofStates',
+                (params: ProofStatesParams) =>
+                    this.noteProofStates(key, params)),
         ];
         return { client, output, state, notifications };
     }
@@ -378,6 +401,48 @@ export class LspClients implements vscode.Disposable {
     /** Re-send the configuration to every running server. */
     private sendConfigAll(): void {
         for (const entry of this.clients.values()) this.sendConfig(entry);
+    }
+
+    /** Fold one `$/proofStates` batch into `key`'s tally.
+     *
+     * A `cheated` state means the pool has dropped the entry -- an
+     * edit reached that proof -- so forget it rather than counting it
+     * as an outcome. */
+    private noteProofStates(key: string, params: ProofStatesParams): void {
+        const entry = this.clients.get(key);
+        if (!entry || !params || !Array.isArray(params.states)) return;
+        const tally = entry.proofs ?? new Map<string, string>();
+        for (const st of params.states) {
+            if (!st || typeof st.name !== 'string') continue;
+            if (st.status === 'cheated') tally.delete(st.name);
+            else tally.set(st.name, st.status);
+        }
+        entry.proofs = tally;
+        this.refreshStatus();
+    }
+
+    /** A tally of what the pool is doing, or '' when it has nothing to
+     * say -- so a session with checking off shows no proof text.
+     *
+     * A count, not a progress bar: the states regress.  A proof that
+     * suspends makes the server re-elaborate and drops the entries
+     * below it, so a bar would run backwards, while a count falling
+     * from 30 to 12 reads as what it is. */
+    private proofSummary(entry: ScriptClient): string {
+        if (!entry.proofs || entry.proofs.size === 0) return '';
+        let checking = 0, proved = 0, bad = 0;
+        for (const status of entry.proofs.values()) {
+            if (status === 'checking') checking++;
+            else if (status === 'proved') proved++;
+            else bad++;
+        }
+        const total = checking + proved + bad;
+        if (checking > 0) {
+            return ` — proofs ${proved}/${total}` +
+                   (bad > 0 ? ` (${bad} to look at)` : '');
+        }
+        if (bad > 0) return ` — proofs ${proved}/${total} (${bad} to look at)`;
+        return ` — ${proved} proofs checked`;
     }
 
     /** Record (or clear) why `key`'s script is not being compiled, and
@@ -427,7 +492,9 @@ export class LspClients implements vscode.Disposable {
                     this.showStatus('HOL LSP: not compiling', true);
                     break;
                 }
-                this.showStatus('HOL LSP', false);
+                // Proofs settle after the compile, so the tally keeps
+                // moving while the editor is otherwise idle.
+                this.showStatus('HOL LSP' + this.proofSummary(entry), false);
                 break;
             case State.Starting:
                 this.showStatus('HOL LSP: starting…', false);

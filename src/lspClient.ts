@@ -371,7 +371,8 @@ export class LspClients implements vscode.Disposable {
             // The file compiled, so whatever it was blocked on is
             // resolved.
             client.onNotification('$/compileCompleted',
-                () => this.setBlocked(key, undefined)),
+                () => { this.setBlocked(key, undefined);
+                        this.pruneStaleProofs(key); }),
             client.onNotification('$/proofStates',
                 (params: ProofStatesParams) =>
                     this.noteProofStates(key, params)),
@@ -414,11 +415,36 @@ export class LspClients implements vscode.Disposable {
         const tally = entry.proofs ?? new Map<string, string>();
         for (const st of params.states) {
             if (!st || typeof st.name !== 'string') continue;
-            if (st.status === 'cheated') tally.delete(st.name);
-            else tally.set(st.name, st.status);
+            // `cheated` is kept, not dropped.  It means the pool has
+            // let go of that entry -- an edit reached the proof -- and
+            // the compile that follows re-enqueues it.  Dropping it
+            // made the tally *shrink*, so "62 proofs checked" became
+            // "61 proofs checked", which reads as finished rather than
+            // as one outstanding.  See `pruneStaleProofs`.
+            tally.set(st.name, st.status);
         }
         entry.proofs = tally;
         this.refreshStatus();
+    }
+
+    /** Drop proofs still `cheated` when a compile finishes.
+     *
+     * A pass announces `checking` for everything it enqueues before it
+     * completes, so a proof still `cheated` by then was not
+     * re-enqueued: its theorem is gone, or its tactic does not compile
+     * and the compile error is the report.  Keeping it would leave the
+     * tally short of a proof that is never coming back. */
+    private pruneStaleProofs(key: string): void {
+        const entry = this.clients.get(key);
+        if (!entry?.proofs) return;
+        let dropped = false;
+        for (const [name, status] of [...entry.proofs]) {
+            if (status === 'cheated') {
+                entry.proofs.delete(name);
+                dropped = true;
+            }
+        }
+        if (dropped) this.refreshStatus();
     }
 
     /** A tally of what the pool is doing, or '' when it has nothing to
@@ -432,7 +458,9 @@ export class LspClients implements vscode.Disposable {
         if (!entry.proofs || entry.proofs.size === 0) return '';
         let checking = 0, proved = 0, bad = 0;
         for (const status of entry.proofs.values()) {
-            if (status === 'checking') checking++;
+            // `cheated` counts as outstanding: the pool has dropped it
+            // and the next pass picks it up again.
+            if (status === 'checking' || status === 'cheated') checking++;
             else if (status === 'proved') proved++;
             else bad++;
         }

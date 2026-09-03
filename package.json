@@ -330,6 +330,11 @@
                     "default": true,
                     "description": "Enable the HOL4 LSP client. One `bin/hol lsp` process is started per visible `*Script.sml` file, and stopped when the file is closed. Diagnostics, hover, and the HOL Goals pane require this."
                 },
+                "hol4-mode.lsp.checkProofs": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Check the proofs in a script, rather than taking them on trust. Elaboration does not run tactics, which is what makes it fast; with this on, a worker pool replays each proof and reports one that fails as an error on the theorem's name, and one that suspends or diverges as a warning. It costs what the proofs cost: one worker per processor, capped at eight. Changing it takes effect without a restart."
+                },
                 "hol4-mode.lsp.openGoalsOnStartup": {
                     "type": "boolean",
                     "default": true,

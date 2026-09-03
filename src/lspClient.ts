@@ -169,7 +169,8 @@ export class LspClients implements vscode.Disposable {
             // hear about; it takes effect on the next hover, with no
             // restart.
             vscode.workspace.onDidChangeConfiguration((e) => {
-                if (e.affectsConfiguration('hol4-mode.lsp.hoverWidth')) {
+                if (e.affectsConfiguration('hol4-mode.lsp.hoverWidth') ||
+                    e.affectsConfiguration('hol4-mode.lsp.checkProofs')) {
                     this.sendConfigAll();
                 }
             }));
@@ -355,7 +356,7 @@ export class LspClients implements vscode.Disposable {
         return { client, output, state, notifications };
     }
 
-    /** Tell one server how wide to render hover text.
+    /** Tell one server the settings it cannot work out for itself.
      *
      * The width has to come from us: a hover is markdown in a box, and
      * a theorem broken to some other width breaks in the wrong places.
@@ -364,10 +365,14 @@ export class LspClients implements vscode.Disposable {
      * statements come out wider than the box. */
     private sendConfig(entry: ScriptClient): void {
         if (entry.client.state !== State.Running) return;
-        const width = vscode.workspace.getConfiguration('hol4-mode')
-            .get<number>('lsp.hoverWidth', 72);
-        entry.client.sendRequest('$/setConfig', { hoverWidth: width })
-            .catch((err) => error(`LSP $/setConfig failed: ${err}`));
+        const cfg = vscode.workspace.getConfiguration('hol4-mode');
+        entry.client.sendRequest('$/setConfig', {
+            hoverWidth: cfg.get<number>('lsp.hoverWidth', 50),
+            // The server leaves proof checking off unless told; sent on
+            // every connection and again whenever the setting changes,
+            // so turning it on or off needs no restart.
+            checkProofs: cfg.get<boolean>('lsp.checkProofs', true),
+        }).catch((err) => error(`LSP $/setConfig failed: ${err}`));
     }
 
     /** Re-send the configuration to every running server. */

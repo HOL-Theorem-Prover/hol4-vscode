@@ -409,30 +409,39 @@ export class LspClients implements vscode.Disposable {
 
     /** Fold one `$/proofStates` batch into `key`'s tally.
      *
-     * A `cheated` state means the pool has dropped the entry -- an
-     * edit reached that proof -- so forget it rather than counting it
-     * as an outcome. */
+     * Keyed by name alone.  The name is the only identity that
+     * survives re-elaboration: an edit anywhere above a proof moves
+     * it, so the same proof is announced at one position and then
+     * another, and keying by position counted it twice -- adding a
+     * line at the top of a 61-theorem file gave 122 entries, and the
+     * tally climbed with every edit.  The exception is a rebound name,
+     * two `Theorem foo`, which share one entry and so one slot in the
+     * tally; nothing distinguishes them that an edit does not also
+     * move.
+     *
+     * A proof with no name is not tracked at all.  Those are the
+     * definition principle justifying itself -- pattern coverage,
+     * automatic termination -- and appear nowhere in the script, so
+     * counting them reported 65 proofs for a file with 61 theorems.
+     *
+     * `cheated` is kept, not dropped.  It means the pool has let go of
+     * that entry -- an edit reached the proof -- and the compile that
+     * follows re-enqueues it.  Dropping it made the tally *shrink*, so
+     * "62 proofs checked" became "61 proofs checked", which reads as
+     * finished rather than as one outstanding.  See
+     * `pruneStaleProofs`.
+     *
+     * The line is data, not identity, and is refreshed by every
+     * announcement -- the server re-announces a proof an edit moved
+     * for that reason. */
     private noteProofStates(key: string, params: ProofStatesParams): void {
         const entry = this.clients.get(key);
         if (!entry || !params || !Array.isArray(params.states)) return;
         const tally = entry.proofs ??
             new Map<string, { status: string; line: number }>();
         for (const st of params.states) {
-            if (!st || typeof st.name !== 'string') continue;
-            // Keyed by name *and* line: a proof with no name of its own
-            // -- a Definition's termination obligation, say -- is
-            // announced as "", and keying by name alone collapsed every
-            // one of them into a single entry.  That is where a file
-            // with 61 theorems got a 62nd, and lost count of the rest.
-            // `cheated` is kept, not dropped.  It means the pool has
-            // let go of that entry -- an edit reached the proof -- and
-            // the compile that follows re-enqueues it.  Dropping it
-            // made the tally *shrink*, so "62 proofs checked" became
-            // "61 proofs checked", which reads as finished rather than
-            // as one outstanding.  See `pruneStaleProofs`.
-            const line = st.pos?.line ?? 0;
-            tally.set(`${st.name}@${line}`,
-                      { status: st.status, line });
+            if (!st || typeof st.name !== 'string' || st.name === '') continue;
+            tally.set(st.name, { status: st.status, line: st.pos?.line ?? 0 });
         }
         entry.proofs = tally;
         this.refreshStatus();
@@ -504,8 +513,8 @@ export class LspClients implements vscode.Disposable {
         if (!entry?.proofs) return [];
         return [...entry.proofs]
             .filter(([, v]) => v.status !== 'proved')
-            .map(([key, v]) => ({
-                name: key.slice(0, key.lastIndexOf('@')) || '(unnamed proof)',
+            .map(([name, v]) => ({
+                name,
                 status: v.status === 'cheated' ? 'not checked' : v.status,
                 line: v.line,
             }))

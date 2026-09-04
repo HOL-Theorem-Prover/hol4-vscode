@@ -374,7 +374,8 @@
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
-        "test": "node ./out/test/runTest.js"
+        "test": "node ./out/test/runTest.js",
+        "test:offline": "npm run compile && node test/offline/proof-tally.js"
     },
     "dependencies": {
         "vscode-languageclient": "^9.0.1"

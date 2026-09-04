@@ -419,33 +419,43 @@ export class LspClients implements vscode.Disposable {
             new Map<string, { status: string; line: number }>();
         for (const st of params.states) {
             if (!st || typeof st.name !== 'string') continue;
+            // Keyed by name *and* line: a proof with no name of its own
+            // -- a Definition's termination obligation, say -- is
+            // announced as "", and keying by name alone collapsed every
+            // one of them into a single entry.  That is where a file
+            // with 61 theorems got a 62nd, and lost count of the rest.
             // `cheated` is kept, not dropped.  It means the pool has
             // let go of that entry -- an edit reached the proof -- and
             // the compile that follows re-enqueues it.  Dropping it
             // made the tally *shrink*, so "62 proofs checked" became
             // "61 proofs checked", which reads as finished rather than
             // as one outstanding.  See `pruneStaleProofs`.
-            tally.set(st.name,
-                      { status: st.status, line: st.pos?.line ?? 0 });
+            const line = st.pos?.line ?? 0;
+            tally.set(`${st.name}@${line}`,
+                      { status: st.status, line });
         }
         entry.proofs = tally;
         this.refreshStatus();
     }
 
-    /** Drop proofs still `cheated` when a compile finishes.
+    /** Drop entries for proofs that are no longer in the document.
      *
-     * A pass announces `checking` for everything it enqueues before it
-     * completes, so a proof still `cheated` by then was not
-     * re-enqueued: its theorem is gone, or its tactic does not compile
-     * and the compile error is the report.  Keeping it would leave the
-     * tally short of a proof that is never coming back. */
+     * A proof still `cheated` when a compile finishes was not
+     * re-enqueued by that pass, which happens both when its theorem
+     * has been deleted and when the server did not get round to it.
+     * Those look identical from here, and dropping them silently is
+     * the worse mistake: it counted an unchecked proof as if it had
+     * been checked.  So only entries past the end of the file go. */
     private pruneStaleProofs(key: string): void {
         const entry = this.clients.get(key);
         if (!entry?.proofs) return;
+        const doc = vscode.workspace.textDocuments.find(
+            (d) => d.uri.toString() === key);
+        if (!doc) return;
         let dropped = false;
-        for (const [name, { status }] of [...entry.proofs]) {
-            if (status === 'cheated') {
-                entry.proofs.delete(name);
+        for (const [k, { line }] of [...entry.proofs]) {
+            if (line >= doc.lineCount) {
+                entry.proofs.delete(k);
                 dropped = true;
             }
         }
@@ -461,20 +471,26 @@ export class LspClients implements vscode.Disposable {
      * from 30 to 12 reads as what it is. */
     private proofSummary(entry: ScriptClient): string {
         if (!entry.proofs || entry.proofs.size === 0) return '';
-        let checking = 0, proved = 0, bad = 0;
+        let checking = 0, unchecked = 0, proved = 0, bad = 0;
         for (const { status } of entry.proofs.values()) {
-            // `cheated` counts as outstanding: the pool has dropped it
-            // and the next pass picks it up again.
-            if (status === 'checking' || status === 'cheated') checking++;
+            if (status === 'checking') checking++;
+            // `cheated` means the pool is not working on this one:
+            // usually because an edit reached it and the next pass will
+            // pick it up, but it stays that way if the pass never does.
+            // Either way it has *not* been checked, and saying so is
+            // the whole point of the count.
+            else if (status === 'cheated') unchecked++;
             else if (status === 'proved') proved++;
             else bad++;
         }
-        const total = checking + proved + bad;
-        if (checking > 0) {
-            return ` — proofs ${proved}/${total}` +
-                   (bad > 0 ? ` (${bad} to look at)` : '');
+        const total = checking + unchecked + proved + bad;
+        const notes: string[] = [];
+        if (bad > 0) notes.push(`${bad} to look at`);
+        if (unchecked > 0) notes.push(`${unchecked} not checked`);
+        const tail = notes.length > 0 ? ` (${notes.join(', ')})` : '';
+        if (checking > 0 || unchecked > 0 || bad > 0) {
+            return ` — proofs ${proved}/${total}${tail}`;
         }
-        if (bad > 0) return ` — proofs ${proved}/${total} (${bad} to look at)`;
         return ` — ${proved} proofs checked`;
     }
 
@@ -488,7 +504,11 @@ export class LspClients implements vscode.Disposable {
         if (!entry?.proofs) return [];
         return [...entry.proofs]
             .filter(([, v]) => v.status !== 'proved')
-            .map(([name, v]) => ({ name, status: v.status, line: v.line }))
+            .map(([key, v]) => ({
+                name: key.slice(0, key.lastIndexOf('@')) || '(unnamed proof)',
+                status: v.status === 'cheated' ? 'not checked' : v.status,
+                line: v.line,
+            }))
             .sort((a, b) => a.line - b.line);
     }
 

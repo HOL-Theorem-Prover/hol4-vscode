@@ -177,6 +177,11 @@
                 "command": "hol4-mode.lsp.retryCompile",
                 "title": "Compile the active script again",
                 "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.lsp.gotoOutstandingProof",
+                "title": "Go to the next unchecked proof",
+                "category": "HOL"
             }
         ],
         "keybindings": [

@@ -108,10 +108,13 @@ interface ScriptClient {
      * is.  Set from `$/compileBlocked` and cleared by the compile that
      * gets through; see `blockedFor`. */
     blocked?: string;
-    /** What the proof-checking pool is doing, by theorem name.
+    /** What the proof-checking pool is doing, by theorem name, with
+     * the line its declaration starts on -- which is what makes the
+     * count actionable: it is how `gotoOutstandingProof` reaches the
+     * proof the tally is short of.
      * `$/proofStates` is a transition stream -- the server announces
      * each change and never sends a snapshot -- so this accumulates. */
-    proofs?: Map<string, string>;
+    proofs?: Map<string, { status: string; line: number }>;
     /** `$/compileBlocked` / `$/compileCompleted` subscriptions. */
     notifications: vscode.Disposable[];
 }
@@ -412,7 +415,8 @@ export class LspClients implements vscode.Disposable {
     private noteProofStates(key: string, params: ProofStatesParams): void {
         const entry = this.clients.get(key);
         if (!entry || !params || !Array.isArray(params.states)) return;
-        const tally = entry.proofs ?? new Map<string, string>();
+        const tally = entry.proofs ??
+            new Map<string, { status: string; line: number }>();
         for (const st of params.states) {
             if (!st || typeof st.name !== 'string') continue;
             // `cheated` is kept, not dropped.  It means the pool has
@@ -421,7 +425,8 @@ export class LspClients implements vscode.Disposable {
             // made the tally *shrink*, so "62 proofs checked" became
             // "61 proofs checked", which reads as finished rather than
             // as one outstanding.  See `pruneStaleProofs`.
-            tally.set(st.name, st.status);
+            tally.set(st.name,
+                      { status: st.status, line: st.pos?.line ?? 0 });
         }
         entry.proofs = tally;
         this.refreshStatus();
@@ -438,7 +443,7 @@ export class LspClients implements vscode.Disposable {
         const entry = this.clients.get(key);
         if (!entry?.proofs) return;
         let dropped = false;
-        for (const [name, status] of [...entry.proofs]) {
+        for (const [name, { status }] of [...entry.proofs]) {
             if (status === 'cheated') {
                 entry.proofs.delete(name);
                 dropped = true;
@@ -457,7 +462,7 @@ export class LspClients implements vscode.Disposable {
     private proofSummary(entry: ScriptClient): string {
         if (!entry.proofs || entry.proofs.size === 0) return '';
         let checking = 0, proved = 0, bad = 0;
-        for (const status of entry.proofs.values()) {
+        for (const { status } of entry.proofs.values()) {
             // `cheated` counts as outstanding: the pool has dropped it
             // and the next pass picks it up again.
             if (status === 'checking' || status === 'cheated') checking++;
@@ -471,6 +476,40 @@ export class LspClients implements vscode.Disposable {
         }
         if (bad > 0) return ` — proofs ${proved}/${total} (${bad} to look at)`;
         return ` — ${proved} proofs checked`;
+    }
+
+    /** The proofs the pool has not settled for the active editor, in
+     * file order.  `proved` is left out: it needs nothing.  `checking`
+     * and `cheated` are outstanding, and the three bad verdicts are
+     * included because those are what a user most wants to reach. */
+    outstandingProofs(): { name: string; status: string; line: number }[] {
+        const doc = vscode.window.activeTextEditor?.document;
+        const entry = doc && this.clients.get(doc.uri.toString());
+        if (!entry?.proofs) return [];
+        return [...entry.proofs]
+            .filter(([, v]) => v.status !== 'proved')
+            .map(([name, v]) => ({ name, status: v.status, line: v.line }))
+            .sort((a, b) => a.line - b.line);
+    }
+
+    /** Reveal the next unsettled proof after the cursor, cycling. */
+    gotoOutstandingProof(): void {
+        const editor = vscode.window.activeTextEditor;
+        const out = this.outstandingProofs();
+        if (!editor || out.length === 0) {
+            vscode.window.showInformationMessage(
+                'HOL: no outstanding proofs.');
+            return;
+        }
+        const here = editor.selection.active.line;
+        const next = out.find((p) => p.line > here) ?? out[0];
+        const pos = new vscode.Position(next.line, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos),
+                           vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+        vscode.window.setStatusBarMessage(
+            `HOL: ${next.name} is ${next.status} (${out.length} outstanding)`,
+            4000);
     }
 
     /** Record (or clear) why `key`'s script is not being compiled, and
@@ -535,8 +574,20 @@ export class LspClients implements vscode.Disposable {
 
     private showStatus(text: string, warn: boolean): void {
         this.status.text = warn ? `$(warning) ${text}` : `$(check) ${text}`;
-        this.status.tooltip =
-            'HOL4 LSP for the active script; click for its output channel';
+        const out = this.outstandingProofs();
+        if (out.length > 0) {
+            // A count the user cannot act on is only half a message,
+            // so name them and make the item jump to one.
+            this.status.tooltip =
+                'Outstanding proofs: ' +
+                out.map((p) => `${p.name} (${p.status})`).join(', ') +
+                '\nClick to go to the next one';
+            this.status.command = 'hol4-mode.lsp.gotoOutstandingProof';
+        } else {
+            this.status.tooltip =
+                'HOL4 LSP for the active script; click for its output channel';
+            this.status.command = 'hol4-mode.lsp.showOutput';
+        }
         this.status.show();
     }
 }

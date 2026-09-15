@@ -356,7 +356,18 @@
                     "maximum": 500,
                     "description": "Column width the language server renders hover text at, including theorem statements. VS Code does not expose the width of a hover box, so this is an estimate rather than a measurement; 50 is about what a default hover box holds. Too narrow only costs extra line breaks, while too wide makes the box scroll sideways, so err low. Raise it if you have a small font or a wide box."
                 },
-                "hol4-mode.lsp.executable": {
+                "hol4-lsp.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "compact",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Record the JSON-RPC traffic between VS Code and each `bin/hol lsp` process in the matching `HOL4 LSP Trace: <file>` output channel. `messages` names each request and notification; `verbose` adds their parameters and results. For diagnosing a server that misbehaves only under VS Code: the transcript shows what was asked and in what order, which no server-side log can. Takes effect without a restart. Leave it off otherwise, as it is a lot of output."
+        },
+        "hol4-mode.lsp.executable": {
                     "type": "string",
                     "default": "",
                     "description": "Optional path to `bin/hol` for the LSP servers. Empty falls back to `hol4-mode.holdir/bin/hol`, then `$HOLDIR/bin/hol`."
@@ -379,7 +390,7 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js",
-        "test:offline": "npm run compile && node test/offline/proof-tally.js && node test/offline/goal-segments.js"
+        "test:offline": "npm run compile && node test/offline/proof-tally.js && node test/offline/goal-segments.js && node test/offline/lsp-trace.js"
     },
     "dependencies": {
         "vscode-languageclient": "^9.0.1"

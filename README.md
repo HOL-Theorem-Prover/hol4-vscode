@@ -105,6 +105,28 @@ active script`, `HOL: Compile the active script again`.  All but the
 first, and the status bar item, act on the server belonging to the
 script in the active editor.
 
+### Recording the protocol traffic
+
+A server that misbehaves only under VS Code is a question about what
+the *client* asked for and in what order, which no server-side log can
+answer.  Set
+
+```json
+"hol4-lsp.trace.server": "verbose"
+```
+
+and every request, notification and reply is written to a
+`HOL4 LSP Trace: <file>` output channel, one per server, beside the
+`HOL4 LSP: <file>` channel carrying that server's own output.
+`messages` names each message without its parameters, which is enough
+to establish ordering and much shorter.  The setting takes effect
+without a restart, and it is a lot of output, so leave it off
+otherwise.
+
+The section is `hol4-lsp`, not `hol4-mode`: vscode-languageclient
+resolves it from the client's id, and that id is shared by every
+server so one setting covers them all.
+
 ## Extension Settings
 
 There is no longer a `hol4-mode.indexing` setting.  The symbol

@@ -108,6 +108,15 @@ export function isHolScript(doc: vscode.TextDocument): boolean {
     return doc.uri.scheme === 'file' && doc.uri.fsPath.endsWith('Script.sml');
 }
 
+/** The configuration section vscode-languageclient reads the trace
+ * setting from: it calls `workspace.getConfiguration(<client id>)` and
+ * asks for `trace.server`, so the id *is* the section name.  Every
+ * client shares this one, which is what makes a single
+ * `hol4-lsp.trace.server` setting turn tracing on for all of them --
+ * an id carrying the script's path could not be named in
+ * `settings.json` at all, let alone one per open file. */
+export const TRACE_SECTION = 'hol4-lsp';
+
 /** `DocumentFilter.pattern` is matched as a glob, so a path holding
  * glob metacharacters could match a *different* file and let that
  * file be adopted into this file's server.  Wrap each metacharacter
@@ -121,6 +130,11 @@ function globEscape(p: string): string {
 interface ScriptClient {
     client: LanguageClient;
     output: vscode.OutputChannel;
+    /** Where the JSON-RPC transcript goes when `hol4-lsp.trace.server`
+     * is on.  Its own channel: the transcript is the ordering of
+     * requests against this server, and interleaving it with the
+     * server's stdout would bury exactly that. */
+    trace: vscode.OutputChannel;
     /** `onDidChangeState` subscription; lives and dies with the client. */
     state: vscode.Disposable;
     /** Why the server is not compiling this script, or undefined if it
@@ -145,7 +159,7 @@ function disposeScriptClient(entry: ScriptClient): void {
     // of megabytes, not a rounding error.
     entry.client.stop()
         .catch(() => { /* best-effort */ })
-        .then(() => entry.output.dispose());
+        .then(() => { entry.output.dispose(); entry.trace.dispose(); });
 }
 
 /**
@@ -429,6 +443,8 @@ export class LspClients implements vscode.Disposable {
         const fsPath = doc.uri.fsPath;
         const rel = vscode.workspace.asRelativePath(doc.uri);
         const output = vscode.window.createOutputChannel(`HOL4 LSP: ${rel}`);
+        const trace = vscode.window.createOutputChannel(
+            `HOL4 LSP Trace: ${rel}`);
 
         // No `transport:` field: the client defaults to stdio without
         // appending the `--stdio` flag that `bin/hol lsp` rejects.
@@ -455,14 +471,18 @@ export class LspClients implements vscode.Disposable {
             // stay one per client, each owning its own URI.
             diagnosticCollectionName: 'hol4-lsp',
             outputChannel: output,
+            traceOutputChannel: trace,
             // No `synchronize.fileEvents`: the server has no
             // `workspace/didChangeWatchedFiles` handler and logs the
             // notification as unknown, and one workspace-wide watcher
             // per open script would be pure overhead.
         };
 
+        // The id is the configuration section, not an identity: see
+        // `TRACE_SECTION`.  The *name* still carries the path, which is
+        // what the UI shows, and each client keeps its own channels.
         const client = new LanguageClient(
-            `hol4-lsp:${fsPath}`, `HOL4 LSP: ${rel}`,
+            TRACE_SECTION, `HOL4 LSP: ${rel}`,
             serverOptions, clientOptions);
         const state = client.onDidChangeState(() => {
             this.refreshStatus();
@@ -486,7 +506,7 @@ export class LspClients implements vscode.Disposable {
                 (params: ProofStatesParams) =>
                     this.noteProofStates(key, params)),
         ];
-        return { client, output, state, notifications };
+        return { client, output, trace, state, notifications };
     }
 
     /** Tell one server the settings it cannot work out for itself.

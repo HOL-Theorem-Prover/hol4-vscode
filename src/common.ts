@@ -120,6 +120,36 @@ export function segmentTitle(seg: GoalSegment): string | undefined {
     return undefined;
 }
 
+/** What each kind of symbol is coloured, held equal to the colours
+ * `PPBackEnd.vt100_terminal` gives the same goal in a terminal: fv
+ * Blue, bv Green, tyv Purple, tyop and tysyn BlueGreen.  The theme's
+ * own terminal colours, so HOL's hex is only the fallback.
+ *
+ * A constant takes the body's own foreground, because HOL gives it no
+ * colour either: `output_colors` has no field for a constant, and
+ * `add_xstring` lets one fall through to plain text.  Colouring it
+ * said something about it that HOL does not say, and said it in the
+ * free variables' blue.
+ *
+ * Hue only.  `Blue` is a light colour, so `fg_to_vt100` sends it as
+ * `;1;34` and the `pretty` fallback path renders a free variable bold
+ * through `.ansi-bold`; this path leaves the weight alone. */
+export const KIND_COLORS: Record<NonNullable<GoalSegment['kind']>, string> = {
+    const: 'var(--vscode-editor-foreground)',
+    fv: 'var(--vscode-terminal-ansiBlue, #2472c8)',
+    bv: 'var(--vscode-terminal-ansiGreen, #0dbc79)',
+    tyvar: 'var(--vscode-terminal-ansiMagenta, #bc3fbc)',
+    tyop: 'var(--vscode-terminal-ansiCyan, #11a8cd)',
+    tysyn: 'var(--vscode-terminal-ansiCyan, #11a8cd)',
+};
+
+/** `KIND_COLORS` as the stylesheet rules for the classes
+ * `segmentsToHtml` puts on.  Constant, so built once. */
+export const KIND_CSS: string =
+    Object.entries(KIND_COLORS)
+        .map(([kind, color]) => `  .hol-${kind} { color: ${color}; }`)
+        .join('\n');
+
 /** Render the segments as HTML, giving each annotated one a `title`
  * so the browser shows it as a tooltip, and the same class
  * `ansiToHtml` would have derived from the colour -- the kind is what

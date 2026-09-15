@@ -7,7 +7,7 @@
 // what a tooltip says, and that the text still comes out intact.
 //
 // Nothing here needs an extension host; `vscode` is stubbed and the
-// real compiled out/goalsView.js is driven.  Run via `npm run
+// real compiled out/common.js is driven.  Run via `npm run
 // test:offline`.
 const Module = require('module');
 const path = require('path');
@@ -33,7 +33,7 @@ Module._load = function (request, ...rest) {
   return origLoad.call(this, request, ...rest);
 };
 
-const { segmentTitle, segmentsToHtml, hitLocation } =
+const { segmentTitle, segmentsToHtml, hitLocation, KIND_COLORS, KIND_CSS } =
   require(path.join(REPO, 'out', 'common.js'));
 
 let failed = 0;
@@ -94,6 +94,27 @@ check('segment text is html-escaped',
       nasty.includes('a &lt; b'), nasty);
 check('and so is the title',
       nasty.includes('&quot;') && !nasty.includes('title="x$"<"'), nasty);
+
+// --- and the colours say what HOL says -------------------------------
+// Written out rather than derived, so an unintended edit to the table
+// fails here.  See `KIND_COLORS` in common.ts for why a constant is
+// left plain -- that is the case this pins.
+const wanted = {
+  const: 'var(--vscode-editor-foreground)',
+  fv: 'var(--vscode-terminal-ansiBlue, #2472c8)',
+  bv: 'var(--vscode-terminal-ansiGreen, #0dbc79)',
+  tyvar: 'var(--vscode-terminal-ansiMagenta, #bc3fbc)',
+  tyop: 'var(--vscode-terminal-ansiCyan, #11a8cd)',
+  tysyn: 'var(--vscode-terminal-ansiCyan, #11a8cd)',
+};
+check("the palette is vt100_terminal's, a constant left plain",
+      Object.keys(wanted).every(k => KIND_COLORS[k] === wanted[k]) &&
+        Object.keys(KIND_COLORS).length === Object.keys(wanted).length,
+      KIND_COLORS);
+check('and every kind of it reaches the stylesheet',
+      Object.entries(wanted).every(
+        ([k, c]) => KIND_CSS.includes(`.hol-${k} { color: ${c}; }`)),
+      KIND_CSS);
 
 // --- search hits say where they were proved -------------------------
 check('a hit shows its script and line, not its path',

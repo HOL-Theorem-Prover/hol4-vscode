@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { escapeHtml, segmentsToHtml } from './common';
+import { escapeHtml, KIND_CSS, segmentsToHtml } from './common';
 import {
     GoalStateParams,
     GoalStateResponse,
@@ -271,14 +271,8 @@ function wrap(body: string): string {
   pre.pretty { margin: 0; white-space: pre-wrap;
                font-family: inherit; font-size: inherit; }
   .ansi-bold { font-weight: bold; }
-  /* What the ANSI colours were standing for, now said outright.
-     Kept to the same palette so the pane looks unchanged. */
-  .hol-const { color: var(--vscode-terminal-ansiBlue, #2472c8); }
-  .hol-fv    { color: var(--vscode-terminal-ansiGreen, #0dbc79); }
-  .hol-bv    { color: var(--vscode-terminal-ansiMagenta, #bc3fbc); }
-  .hol-tyvar,
-  .hol-tyop,
-  .hol-tysyn { color: var(--vscode-terminal-ansiCyan, #11a8cd); }
+  /* What the ANSI colours were standing for, now said outright. */
+${KIND_CSS}
   span[title] { cursor: help; }
   .ansi-fg-0  { color: #808080; }
   .ansi-fg-1  { color: var(--vscode-terminal-ansiRed, #cd3131); }

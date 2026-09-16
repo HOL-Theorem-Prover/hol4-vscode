@@ -16,6 +16,7 @@ const REPO = path.join(__dirname, '..', '..');
 
 const asked = [];
 const channels = [];
+const panels = [];
 const stub = new Proxy({
   Uri: { file: (p) => ({ scheme: 'file', fsPath: p, toString: () => 'file://' + p }) },
   ViewColumn: { Beside: -2 },
@@ -28,6 +29,22 @@ const stub = new Proxy({
     showErrorMessage: () => Promise.resolve(),
     createStatusBarItem: () => ({ text: '', tooltip: '', command: undefined,
       backgroundColor: undefined, show(){}, hide(){}, dispose(){} }),
+    createWebviewPanel: (_id, _title, _col, _opts) => {
+      const panel = {
+        written: [],
+        webview: {
+          set html(v) { panel.written.push(v); },
+          get html() { return panel.written[panel.written.length - 1]; },
+          onDidReceiveMessage: () => ({ dispose(){} }),
+        },
+        onDidDispose: (fn) => { panel.disposeHandler = fn;
+                                return { dispose(){} }; },
+        reveal(){},
+        dispose(){ if (panel.disposeHandler) panel.disposeHandler(); },
+      };
+      panels.push(panel);
+      return panel;
+    },
     onDidChangeActiveTextEditor: () => ({ dispose(){} }),
     onDidChangeVisibleTextEditors: () => ({ dispose(){} }),
     visibleTextEditors: [],
@@ -153,6 +170,35 @@ if (typeof completed === 'function') {
   completed({ uri: doc.uri.toString() });
   ok('and a completed compile tells the pane to re-ask', fired === 1, fired);
 }
+
+// --- the goals pane, scrolled to its end and left alone ------------
+// The active goal comes last and ends with its conclusion, so the end
+// of the page is the part worth showing.  Assigning `webview.html'
+// reloads the document, which scrolls it back to the top -- so an
+// auto-follow tick that renders the same state must not assign at all,
+// or it would yank a state the user is reading back to the top.
+console.log('\ngoals pane');
+const { GoalsView } = require(path.join(REPO, 'out/goalsView.js'));
+const gv = new GoalsView(cs);
+gv.show();
+const panel = panels[panels.length - 1];
+const page = panel.written[0];
+ok('the page knows how to reach its end',
+   /scrollTo\(0, document\.body\.scrollHeight\)/.test(page), true);
+// Defining it is not doing it: check the call as well as the function.
+ok('and does so as it is parsed',
+   /^\s*toBottom\(\);\s*$/m.test(page), true);
+ok('and again once layout has settled',
+   /addEventListener\('load', toBottom\)/.test(page), true);
+
+const before = panel.written.length;
+gv.renderIdle('the same thing');
+gv.renderIdle('the same thing');
+ok('an unchanged render is not written twice',
+   panel.written.length === before + 1, panel.written.length - before);
+gv.renderIdle('something else');
+ok('and a changed one is written',
+   panel.written.length === before + 2, panel.written.length - before);
 
 console.log(fail === 0 ? '\nall checks passed' : `\n${fail} check(s) failed`);
 process.exit(fail ? 1 : 0);

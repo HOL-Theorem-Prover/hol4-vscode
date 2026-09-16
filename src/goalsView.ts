@@ -17,6 +17,13 @@ const RULER_CHARS = 80;
 export class GoalsView implements vscode.Disposable {
     private panel: vscode.WebviewPanel | undefined;
     private timer: NodeJS.Timeout | undefined;
+    /** The page last put in the panel.  Assigning `webview.html'
+     * reloads the document and so scrolls it back to the top, which an
+     * auto-follow tick must not do to a state the user is reading: the
+     * cursor moving within one tactic re-renders the same goal.  Same
+     * page, no assignment.  Eglot keeps `hol-lsp--last-render' for the
+     * same reason. */
+    private lastHtml: string | undefined;
     /** Pane width in characters, as last measured by the page.  75 is
      * HOL's own default, and what the server falls back to. */
     private cols = 75;
@@ -65,6 +72,9 @@ export class GoalsView implements vscode.Disposable {
             if (this.timer) clearTimeout(this.timer);
             this.timer = undefined;
             this.panel = undefined;
+            // A reopened pane is a fresh document, so the next render
+            // has to be written even if it says what the last one did.
+            this.lastHtml = undefined;
         });
         this.panel.webview.onDidReceiveMessage((m) => {
             if (!m || m.type !== 'cols') return;
@@ -203,7 +213,10 @@ export class GoalsView implements vscode.Disposable {
 
     private setHtml(body: string): void {
         if (!this.panel) return;
-        this.panel.webview.html = wrap(body);
+        const html = wrap(body);
+        if (html === this.lastHtml) return;
+        this.lastHtml = html;
+        this.panel.webview.html = html;
     }
 }
 
@@ -318,6 +331,16 @@ ${body}
   }
   window.addEventListener('resize', report);
   report();
+  // The goal state ends with the active goal, and that goal ends with
+  // its conclusion, so the end of the document is the part worth
+  // showing: a state taller than the pane should give up its
+  // assumptions rather than the statement they are about.  The eglot
+  // client puts the last line on the window's bottom line for this.
+  function toBottom() { window.scrollTo(0, document.body.scrollHeight); }
+  toBottom();
+  // Again once fonts and layout have settled: the height measured
+  // during parsing is not always the final one.
+  window.addEventListener('load', toBottom);
 </script>
 </body></html>`;
 }

@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
-import { escapeHtml, KIND_CSS, segmentsToHtml } from './common';
+import {
+    contextLine, contextSkip, escapeHtml, KIND_CSS, segmentsToHtml,
+} from './common';
 import {
     GoalStateParams,
     GoalStateResponse,
@@ -166,13 +168,21 @@ export class GoalsView implements vscode.Disposable {
             // Preferred over `pretty`: same text, but each symbol
             // carries what it is, so the pane can answer the question
             // hover cannot here -- the goal text is in no file.
+            const text = reply.segments.map((s) => s.text ?? '').join('');
+            const skip = contextSkip(text, reply.context);
             this.renderStatus(reply,
-                `<pre class="pretty">${segmentsToHtml(reply.segments)}</pre>`);
+                `<pre class="pretty">${
+                    segmentsToHtml(reply.segments, skip)}</pre>`);
             return;
         }
         if (reply.pretty && reply.pretty.length > 0) {
+            // Colour escapes before the tag line would defeat the
+            // prefix test, and then nothing is stripped -- which is the
+            // safe way to be wrong.
+            const skip = contextSkip(reply.pretty, reply.context);
             this.renderStatus(reply,
-                `<pre class="pretty">${ansiToHtml(reply.pretty)}</pre>`);
+                `<pre class="pretty">${
+                    ansiToHtml(reply.pretty.slice(skip))}</pre>`);
             return;
         }
         const goals = reply.goals ?? [];
@@ -202,18 +212,23 @@ export class GoalsView implements vscode.Disposable {
             ? `<span class="step">step ${reply.step}</span>` : '';
         const opaque = reply.opaque ? '<span class="opaque">(opaque)</span>' : '';
         const thm = reply.theorem ? escapeHtml(reply.theorem) : '';
+        // The tags say where in the proof's combinators the focus sits,
+        // which is as much use as the theorem's name and is lost the
+        // moment the body scrolls -- so it goes in the pinned part.
+        const ctx = contextLine(reply.context);
+        const tags = ctx ? `<div class="ctx">${escapeHtml(ctx)}</div>` : '';
         const header = thm
             ? `<div class="thm">${thm} ${stepInfo} ${opaque}</div>` : '';
-        this.setHtml(`${header}${body}`);
+        this.setHtml(`${header}${tags}`, body);
     }
 
     private renderIdle(message: string): void {
-        this.setHtml(`<div class="idle">${escapeHtml(message)}</div>`);
+        this.setHtml('', `<div class="idle">${escapeHtml(message)}</div>`);
     }
 
-    private setHtml(body: string): void {
+    private setHtml(head: string, body: string): void {
         if (!this.panel) return;
-        const html = wrap(body);
+        const html = wrap(head, body);
         if (html === this.lastHtml) return;
         this.lastHtml = html;
         this.panel.webview.html = html;
@@ -256,16 +271,27 @@ function sgrClass(code: number): string | undefined {
     return undefined;
 }
 
-function wrap(body: string): string {
+function wrap(head: string, body: string): string {
     return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><style>
+  /* Two rows: a head that stays put and a body that scrolls under it.
+     The body is scrolled to its end, so anything in the flow above the
+     goals goes out of sight -- which is the whole reason the theorem,
+     the step and the combinator tags are up here and not in it. */
+  html, body { height: 100%; }
   body { font-family: var(--vscode-editor-font-family, monospace);
          font-size: var(--vscode-editor-font-size, 13px);
          color: var(--vscode-editor-foreground);
-         margin: 0.5em; }
-  .thm { font-weight: bold; margin-bottom: 0.5em;
+         background: var(--vscode-editor-background);
+         margin: 0; display: flex; flex-direction: column; }
+  #head { flex: 0 0 auto; margin: 0.5em 0.5em 0; }
+  #head:empty { display: none; }
+  /* auto, not scroll: no gutter when the state fits. */
+  #scroll { flex: 1 1 auto; overflow-y: auto; margin: 0.5em; }
+  .thm { font-weight: bold;
          color: var(--vscode-symbolIcon-classForeground); }
+  .ctx { color: var(--vscode-descriptionForeground); }
   .step { font-weight: normal;
           color: var(--vscode-descriptionForeground); }
   .opaque { font-weight: normal;
@@ -309,11 +335,13 @@ ${KIND_CSS}
   #ruler { position: absolute; visibility: hidden; white-space: pre;
            font-family: inherit; font-size: inherit; }
 </style></head><body>
-<span id="ruler">${'0'.repeat(RULER_CHARS)}</span>
-${body}
+<div id="head">${head}</div>
+<div id="scroll"><span id="ruler">${'0'.repeat(RULER_CHARS)}</span>
+${body}</div>
 <script>
   const vs = acquireVsCodeApi();
   let last = 0;
+  const scroller = document.getElementById('scroll');
   function report() {
     const ruler = document.getElementById('ruler');
     const per = ruler.getBoundingClientRect().width / ${RULER_CHARS};
@@ -324,7 +352,9 @@ ${body}
     // anyway whenever the estimate runs a shade narrow than the pane.
     // The margin covers that, and a goal that stops short of the edge
     // reads better than one that reaches it.
-    const cols = Math.floor(document.body.clientWidth / per) - 5;
+    // The scroller's own width: it excludes the scrollbar, which the
+    // body's does not.
+    const cols = Math.floor(scroller.clientWidth / per) - 5;
     if (cols === last) return;
     last = cols;
     vs.postMessage({ type: 'cols', cols: cols });
@@ -336,7 +366,7 @@ ${body}
   // showing: a state taller than the pane should give up its
   // assumptions rather than the statement they are about.  The eglot
   // client puts the last line on the window's bottom line for this.
-  function toBottom() { window.scrollTo(0, document.body.scrollHeight); }
+  function toBottom() { scroller.scrollTop = scroller.scrollHeight; }
   toBottom();
   // Again once fonts and layout have settled: the height measured
   // during parsing is not always the final one.

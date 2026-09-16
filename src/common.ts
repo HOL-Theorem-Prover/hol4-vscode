@@ -120,6 +120,28 @@ export function segmentTitle(seg: GoalSegment): string | undefined {
     return undefined;
 }
 
+/** The server's combinator tags as the single bracketed line that
+ * `pretty` opens with, or undefined when there are none.  The tags
+ * arrive separately -- `goalFrag`'s `context_lines` is exposed, in its
+ * own words, "so a client can pin them somewhere that does not scroll
+ * away" -- so the line to remove from `pretty` is known exactly rather
+ * than guessed at: a goal can itself begin with a `[`. */
+export function contextLine(ctx?: string[]): string | undefined {
+    if (!ctx || ctx.length === 0) return undefined;
+    return ctx.map((c) => `[${c}]`).join(' ');
+}
+
+/** How much of `text` is the prefix a pinned header makes redundant:
+ * the tag line, when `text` opens with it, and the blank lines after
+ * it.  Only newlines go -- the goal block's own indentation is
+ * load-bearing. */
+export function contextSkip(text: string, ctx?: string[]): number {
+    const line = contextLine(ctx);
+    let n = line !== undefined && text.startsWith(line) ? line.length : 0;
+    while (text[n] === '\n') n++;
+    return n;
+}
+
 /** What each kind of symbol is coloured, held equal to the colours
  * `PPBackEnd.vt100_terminal` gives the same goal in a terminal: fv
  * Blue, bv Green, tyv Purple, tyop and tysyn BlueGreen.  The theme's
@@ -154,10 +176,18 @@ export const KIND_CSS: string =
  * so the browser shows it as a tooltip, and the same class
  * `ansiToHtml` would have derived from the colour -- the kind is what
  * the colour was standing for. */
-export function segmentsToHtml(segs: GoalSegment[]): string {
+export function segmentsToHtml(segs: GoalSegment[], skip = 0): string {
     let out = '';
+    // `skip` counts characters of the concatenated text, so it can fall
+    // in the middle of a segment: drop the ones it covers whole and
+    // take the tail of the one it lands in.
+    let seen = 0;
     for (const seg of segs) {
-        const text = escapeHtml(seg.text ?? '');
+        const raw = seg.text ?? '';
+        const from = Math.min(Math.max(skip - seen, 0), raw.length);
+        seen += raw.length;
+        if (raw.length > 0 && from === raw.length) continue;
+        const text = escapeHtml(raw.slice(from));
         const title = segmentTitle(seg);
         if (title === undefined) {
             out += text;

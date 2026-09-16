@@ -184,7 +184,12 @@ gv.show();
 const panel = panels[panels.length - 1];
 const page = panel.written[0];
 ok('the page knows how to reach its end',
-   /scrollTo\(0, document\.body\.scrollHeight\)/.test(page), true);
+   /scroller\.scrollTop = scroller\.scrollHeight/.test(page), true);
+// The head must sit outside the element that scrolls, or scrolling to
+// the end takes it out of view -- which is the whole point of it.
+ok('and the head is outside the scrolling part',
+   page.indexOf('id="head"') < page.indexOf('id="scroll"') &&
+     !/id="scroll"[^]*id="head"/.test(page), true);
 // Defining it is not doing it: check the call as well as the function.
 ok('and does so as it is parsed',
    /^\s*toBottom\(\);\s*$/m.test(page), true);

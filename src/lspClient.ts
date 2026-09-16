@@ -55,6 +55,11 @@ export interface GoalStateResponse {
      * The goals pane is the one place hover cannot help: the text is
      * in no file, so there is nothing to hover over. */
     segments?: GoalSegment[];
+    /** The combinator tags open around the focus, outermost first --
+     * "inside >-", "branch 2 of 3 of THENL".  `pretty' repeats them on
+     * its first line; they come separately so a client can pin them
+     * where they do not scroll away. */
+    context?: string[];
     status?: string;
     opaque?: boolean;
     error?: string;

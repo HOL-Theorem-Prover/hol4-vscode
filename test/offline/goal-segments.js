@@ -33,7 +33,8 @@ Module._load = function (request, ...rest) {
   return origLoad.call(this, request, ...rest);
 };
 
-const { segmentTitle, segmentsToHtml, hitLocation, KIND_COLORS, KIND_CSS } =
+const { segmentTitle, segmentsToHtml, hitLocation, KIND_COLORS, KIND_CSS,
+        contextLine, contextSkip } =
   require(path.join(REPO, 'out', 'common.js'));
 
 let failed = 0;
@@ -115,6 +116,49 @@ check('and every kind of it reaches the stylesheet',
       Object.entries(wanted).every(
         ([k, c]) => KIND_CSS.includes(`.hol-${k} { color: ${c}; }`)),
       KIND_CSS);
+
+// --- the tag line is pinned, so the body must not repeat it --------
+// `pretty` opens with the combinator tags, which the pane now shows in
+// a head that does not scroll.  Left in the body they would appear
+// twice whenever the state is short enough not to scroll at all.
+check('tags become the line pretty opens with',
+      contextLine(['branch 2 of 3 of THENL', 'inside >-'])
+        === '[branch 2 of 3 of THENL] [inside >-]',
+      contextLine(['branch 2 of 3 of THENL', 'inside >-']));
+check('no tags, no line',
+      contextLine([]) === undefined && contextLine(undefined) === undefined,
+      [contextLine([]), contextLine(undefined)]);
+
+check('the skip covers the tag line and the blanks after it',
+      contextSkip('[inside >-]\n\n!x. P x', ['inside >-']) === 13,
+      contextSkip('[inside >-]\n\n!x. P x', ['inside >-']));
+check('and nothing when the text does not open with it',
+      contextSkip('!x. P x', ['inside >-']) === 0,
+      contextSkip('!x. P x', ['inside >-']));
+// A goal may itself begin with a `[`; only the tags the server sent
+// are removed, never a bracket that looks like them.
+check('a goal starting with a bracket is left alone',
+      contextSkip('[1,2] = l', undefined) === 0,
+      contextSkip('[1,2] = l', undefined));
+check('leading blank lines go even with no tags',
+      contextSkip('\n\n!x. P x', undefined) === 2,
+      contextSkip('\n\n!x. P x', undefined));
+
+// The skip is in characters of the concatenated text, so it can land
+// inside a segment: that one keeps its tail and its tooltip.
+const skipped = segmentsToHtml([
+  { text: '[inside >-]\n\n' },
+  { text: 'MAP', kind: 'const', name: 'listTheory$MAP', ty: 'num' },
+], 13);
+check('segments the skip covers are dropped whole',
+      !skipped.includes('inside'), skipped);
+check('and what is left keeps its annotation',
+      skipped.includes('class="hol-const"') && skipped.includes('MAP'),
+      skipped);
+const straddled = segmentsToHtml(
+  [{ text: 'abcdef', kind: 'fv', ty: 'x :num' }], 4);
+check('a segment the skip lands inside keeps its tail',
+      straddled.replace(/<[^>]*>/g, '') === 'ef', straddled);
 
 // --- search hits say where they were proved -------------------------
 check('a hit shows its script and line, not its path',

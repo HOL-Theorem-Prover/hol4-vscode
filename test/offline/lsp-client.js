@@ -1,4 +1,4 @@
-// The JSON-RPC trace wiring, checked without VS Code.
+// How the language client is wired up, checked without VS Code.
 //
 // vscode-languageclient resolves the trace setting through
 // `workspace.getConfiguration(<client id>)`, so the client's id *is*
@@ -44,7 +44,20 @@ const stub = new Proxy({
   },
   languages: { createDiagnosticCollection: () => ({ dispose(){} }) },
   commands: { registerCommand: () => ({ dispose(){} }) },
-  EventEmitter: class { constructor(){ this.event = () => ({dispose(){}}); } fire(){} dispose(){} },
+  // A real one: the tests below observe what the extension fires, so
+  // an emitter that swallows `fire` would pass them regardless.
+  EventEmitter: class {
+    constructor() {
+      this.listeners = [];
+      this.event = (fn) => {
+        this.listeners.push(fn);
+        return { dispose: () => {
+          this.listeners = this.listeners.filter((l) => l !== fn); } };
+      };
+    }
+    fire(v) { for (const l of [...this.listeners]) l(v); }
+    dispose() { this.listeners = []; }
+  },
 }, { get(t, k) { if (k in t) return t[k];
       return class Anon { constructor(){} static from(){ return new Anon(); } }; } });
 
@@ -72,11 +85,19 @@ Module._load = function (r, ...a) {
 const lc = require(path.join(REPO, 'node_modules/vscode-languageclient/node'));
 const built = [];
 const RealLC = lc.LanguageClient;
+const notified = new Map();
 class FakeLC extends RealLC {
   constructor(id, name, so, co) { super(id, name, so, co); built.push({ id, name, co }); }
   start() { return Promise.resolve(); }
   stop() { return Promise.resolve(); }
   get state() { return 2; }
+  // Record rather than register: with no connection there is nothing to
+  // deliver a notification, and what these tests check is what the
+  // extension does when one arrives.
+  onNotification(method, handler) {
+    notified.set(method, handler);
+    return { dispose() {} };
+  }
 }
 lc.LanguageClient = FakeLC;
 
@@ -115,6 +136,23 @@ ok('the section the client would consult yields our setting',
    resolved === 'verbose', resolved);
 ok('and the entry carries the channel so disposal can reach it',
    entry.trace !== undefined, Object.keys(entry));
+
+// --- the goals pane hears about a finished compile ----------------
+// Until the compile lands the server has no state to walk and answers
+// nothing, so the pane has to be told when that changes.  The signal
+// used to be a side effect of clearing the dependency block, which says
+// nothing when there was no block to clear -- the ordinary case -- and
+// left the pane empty until the user moved the cursor.
+console.log('\ncompile-completed refresh');
+let fired = 0;
+cs.onDidChangeClientState(() => { fired++; });
+const completed = notified.get('$/compileCompleted');
+ok('the client subscribes to $/compileCompleted',
+   typeof completed === 'function', typeof completed);
+if (typeof completed === 'function') {
+  completed({ uri: doc.uri.toString() });
+  ok('and a completed compile tells the pane to re-ask', fired === 1, fired);
+}
 
 console.log(fail === 0 ? '\nall checks passed' : `\n${fail} check(s) failed`);
 process.exit(fail ? 1 : 0);

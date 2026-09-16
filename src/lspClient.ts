@@ -501,7 +501,18 @@ export class LspClients implements vscode.Disposable {
             // resolved.
             client.onNotification('$/compileCompleted',
                 () => { this.setBlocked(key, undefined);
-                        this.pruneStaleProofs(key); }),
+                        this.pruneStaleProofs(key);
+                        // Announce the compile itself, not just a
+                        // change of block.  `setBlocked` is silent when
+                        // the value does not move, and on the ordinary
+                        // startup path it never does: the file was
+                        // never blocked, so clearing the block clears
+                        // nothing and fires nothing.  The goals pane
+                        // needs to hear this -- until the compile lands
+                        // the server has no state to walk and answers
+                        // nothing, so without an event the pane sits
+                        // empty until the user moves the cursor.
+                        this.stateChanged.fire(); }),
             client.onNotification('$/proofStates',
                 (params: ProofStatesParams) =>
                     this.noteProofStates(key, params)),

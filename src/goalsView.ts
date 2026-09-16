@@ -305,9 +305,13 @@ ${body}
     const ruler = document.getElementById('ruler');
     const per = ruler.getBoundingClientRect().width / ${RULER_CHARS};
     if (!(per > 0)) return;
-    // Leave a character of slack: a line rendered exactly as wide as
-    // the pane wraps anyway on some zoom levels.
-    const cols = Math.floor(document.body.clientWidth / per) - 1;
+    // Report five columns short of what was measured.  The measure
+    // is an approximation -- one glyph's advance width times a pixel
+    // count -- so a line broken at exactly the measured width wraps
+    // anyway whenever the estimate runs a shade narrow than the pane.
+    // The margin covers that, and a goal that stops short of the edge
+    // reads better than one that reaches it.
+    const cols = Math.floor(document.body.clientWidth / per) - 5;
     if (cols === last) return;
     last = cols;
     vs.postMessage({ type: 'cols', cols: cols });

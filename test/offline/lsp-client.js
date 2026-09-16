@@ -196,6 +196,20 @@ ok('and does so as it is parsed',
 ok('and again once layout has settled',
    /addEventListener\('load', toBottom\)/.test(page), true);
 
+// Everything HOL prints above the goals goes in the head, so that
+// scrolling the goals to their end cannot take it away.
+gv.render({ theorem: 'doubleL_thm', step: 24, context: ['inside >-'],
+            note: 'Focused subgoal(s) solved; remaining after close:',
+            pretty: ' 0.  p\n---\n     p\n' });
+const shown = panel.written[panel.written.length - 1];
+const headOf = (p) => p.slice(p.indexOf('id="head"'), p.indexOf('id="scroll"'));
+ok('the theorem, the tags and the note are all in the head',
+   /doubleL_thm/.test(headOf(shown)) &&
+     /inside &gt;-/.test(headOf(shown)) &&
+     /Focused subgoal\(s\) solved/.test(headOf(shown)), headOf(shown));
+ok('and the goals are not',
+   !/ 0\.  p/.test(headOf(shown)) && / 0\.  p/.test(shown), true);
+
 const before = panel.written.length;
 gv.renderIdle('the same thing');
 gv.renderIdle('the same thing');

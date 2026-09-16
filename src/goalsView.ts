@@ -217,9 +217,13 @@ export class GoalsView implements vscode.Disposable {
         // moment the body scrolls -- so it goes in the pinned part.
         const ctx = contextLine(reply.context);
         const tags = ctx ? `<div class="ctx">${escapeHtml(ctx)}</div>` : '';
+        // Same reason as the tags: HOL prints this above the goals, so
+        // it is the first thing scrolling to the end takes away.
+        const note = reply.note
+            ? `<div class="note">${escapeHtml(reply.note)}</div>` : '';
         const header = thm
             ? `<div class="thm">${thm} ${stepInfo} ${opaque}</div>` : '';
-        this.setHtml(`${header}${tags}`, body);
+        this.setHtml(`${header}${tags}${note}`, body);
     }
 
     private renderIdle(message: string): void {
@@ -292,6 +296,8 @@ function wrap(head: string, body: string): string {
   .thm { font-weight: bold;
          color: var(--vscode-symbolIcon-classForeground); }
   .ctx { color: var(--vscode-descriptionForeground); }
+  .note { color: var(--vscode-descriptionForeground);
+          font-style: italic; }
   .step { font-weight: normal;
           color: var(--vscode-descriptionForeground); }
   .opaque { font-weight: normal;

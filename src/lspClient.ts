@@ -60,6 +60,11 @@ export interface GoalStateResponse {
      * its first line; they come separately so a client can pin them
      * where they do not scroll away. */
     context?: string[];
+    /** The line HOL puts above the goals when the focused subgoals
+     * have just been proved and stepping out is what makes the next
+     * ones visible.  Like `context' it belongs where the goals
+     * scrolling will not take it away. */
+    note?: string;
     status?: string;
     opaque?: boolean;
     error?: string;

@@ -72,51 +72,6 @@
                 "category": "HOL"
             },
             {
-                "command": "hol4-mode.sendGoal",
-                "title": "Send goal",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.sendSubgoal",
-                "title": "Send subgoal",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.sendTactic",
-                "title": "Send tactic",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.sendTacticLine",
-                "title": "Send tactic line",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.proofmanShow",
-                "title": "Show current goal",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.proofmanRotate",
-                "title": "Rotate between subgoals",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.proofmanRestart",
-                "title": "Restart current goal",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.proofmanDrop",
-                "title": "Drop current goal",
-                "category": "HOL"
-            },
-            {
-                "command": "hol4-mode.proofmanBack",
-                "title": "Step backwards in current goal",
-                "category": "HOL"
-            },
-            {
                 "command": "hol4-mode.holmake",
                 "title": "Run Holmake in the directory of the current document",
                 "category": "HOL"
@@ -223,60 +178,6 @@
                 "command": "hol4-mode.sendUntilCursor",
                 "key": "ctrl+h ctrl+shift+s",
                 "mac": "cmd+h cmd+shift+s",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.sendGoal",
-                "key": "ctrl+h g",
-                "mac": "cmd+h g",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.sendSubgoal",
-                "key": "ctrl+h ctrl+s",
-                "mac": "cmd+h ctrl+s",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.sendTactic",
-                "key": "ctrl+h e",
-                "mac": "cmd+h e",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.sendTacticLine",
-                "key": "ctrl+h ctrl+e",
-                "mac": "cmd+h ctrl+e",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.proofmanShow",
-                "key": "ctrl+h p",
-                "mac": "cmd+h p",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.proofmanBack",
-                "key": "ctrl+h b",
-                "mac": "cmd+h b",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.proofmanRestart",
-                "key": "ctrl+h shift+r",
-                "mac": "cmd+h shift+r",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.proofmanRotate",
-                "key": "ctrl+h r",
-                "mac": "cmd+h r",
-                "when": "editorLangId == hol4"
-            },
-            {
-                "command": "hol4-mode.proofmanDrop",
-                "key": "ctrl+h d",
-                "mac": "cmd+h d",
                 "when": "editorLangId == hol4"
             },
             {

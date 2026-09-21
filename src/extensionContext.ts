@@ -4,13 +4,6 @@ import { log, error, EXTENSION_ID, KERNEL_ID } from './common';
 import { HolNotebook } from './notebook';
 
 /**
- * Generate a HOL lexer location pragma from a vscode Position value.
- */
-function positionToLocationPragma(pos: vscode.Position): string {
-    return `(*#loc ${pos.line + 1} ${pos.character} *)`;
-}
-
-/**
  * Get the editors current selection if any, or the contents of the editor's
  * current line otherwise.
  */
@@ -19,143 +12,6 @@ function getSelection(editor: vscode.TextEditor): string {
     const selection = editor.selection;
     return selection.isEmpty ? document.lineAt(selection.active.line).text
         : document.getText(selection);
-}
-
-/**
- * Adds a location pragma to the text at the given position.
- */
-function addLocationPragma(text: string, position: vscode.Position) {
-    const locPragma = positionToLocationPragma(position);
-    const trace = '"show_typecheck_errors"';
-    const data =
-        `let val old = Feedback.current_trace ${trace}\n` +
-        `    val _ = Feedback.set_trace ${trace} 0\n` +
-        `in (${locPragma}) before Feedback.set_trace ${trace} old end;\n` +
-        text;
-    return data;
-}
-
-/**
- * Preprocess a tactic selection by removing leading tacticals and trailing
- * tacticals (plus possibly an opening parenthesis).
- */
-function processTactics(text: string): string {
-    const tacticalBegin = /^(\\\\|>>|>-|\bTHEN[1]?\b)(\s)/;
-    const tacticalEnd = /(\\\\|>>|>-|\bTHEN[1]?\b)(\s*)[\(]?$/;
-    return text.trim().replace(tacticalBegin, '$2').replace(tacticalEnd, '$2');
-}
-
-/**
- * Select a chunk of text delimited by `init` and `stop` in the editor `editor`.
- */
-function selectBetween(editor: vscode.TextEditor, init: RegExp, stop: RegExp): vscode.Selection | undefined {
-    const selection = editor.selection;
-    const document = editor.document;
-    const currentLine = selection.active.line;
-
-    let startLine, startCol;
-
-    for (let i = currentLine; i >= 0; i--) {
-        const text = document.lineAt(i).text;
-        const match = init.exec(text);
-        if (match) {
-            startLine = i;
-            startCol = match.index + match[0].length;
-            break;
-        }
-    }
-
-    if (startLine === undefined || startCol === undefined) {
-        return;
-    }
-
-    let endLine, endCol;
-
-    for (let i = currentLine; i < document.lineCount; i++) {
-        let text = document.lineAt(i).text;
-        let offset = 0;
-
-        // If we're at the same line as the starting match, and if the `init`
-        // and `stop` regexes both match the same token, then we need to skip
-        // the init token, or we'll produce an empty range.
-        if (i === startLine) {
-            text = text.slice(startCol);
-            offset += startCol;
-        }
-
-        const match = stop.exec(text);
-        if (match) {
-            endLine = i;
-            endCol = match.index + offset;
-            break;
-        }
-    }
-
-    if (endLine === undefined || endCol === undefined) {
-        return;
-    }
-
-    return new vscode.Selection(startLine, startCol, endLine, endCol);
-};
-
-/**
- * Attempt to extract a goal from the current editor. Start by searching
- * forwards and backwards for a matching `{Theorem,Triviality}:-Proof` pair.
- * If this does not work, search for the nearest pair of double term quotes. If
- * this does not work, search for the nearest pair of single term quotes.
- * Otherwise, return nothing.
- *
- * If you're between two goals or terms you will select a large chunk of
- * everything.
- *
- * @note this function embeds a location pragma in the string it returns.
- */
-function extractGoal(editor: vscode.TextEditor): [string, string] | undefined {
-    const selection = editor.selection;
-    const document = editor.document;
-
-    if (!selection.isEmpty) {
-        const locPragma = positionToLocationPragma(selection.anchor);
-        return [locPragma, document.getText(selection)];
-    }
-
-    const spanBegin = /^(Theorem|Triviality)\s+[^\[\:]+(\[[^\]]*\])?\s*\:/;
-    const spanEnd = /^Proof/;
-
-    let sel;
-    if ((sel = selectBetween(editor, spanBegin, spanEnd)) ||
-        (sel = selectBetween(editor, /“/, /”/)) ||
-        (sel = selectBetween(editor, /‘/, /’/)) ||
-        (sel = selectBetween(editor, /``/, /``/)) ||
-        (sel = selectBetween(editor, /`/, /`/))) {
-        const locPragma = positionToLocationPragma(sel.anchor);
-        return [locPragma, document.getText(sel)];
-    }
-
-    return;
-}
-
-/**
- * Identical to {@link extractGoal} but only accepts term quotations.
- * @todo Merge with extractGoal.
- */
-function extractSubgoal(editor: vscode.TextEditor): [string, string] | undefined {
-    const selection = editor.selection;
-    const document = editor.document;
-
-    if (!selection.isEmpty) {
-        const locPragma = positionToLocationPragma(selection.anchor);
-        return [locPragma, document.getText(selection)];
-    }
-
-    let sel;
-    if ((sel = selectBetween(editor, /‘/, /’/)) ||
-        (sel = selectBetween(editor, /`/, /`/))) {
-        const locPragma = positionToLocationPragma(sel.anchor);
-        return [locPragma, document.getText(sel)];
-    }
-
-    return;
 }
 
 export class HOLExtensionContext {
@@ -323,141 +179,10 @@ export class HOLExtensionContext {
     }
 
     /**
-     * Send a goal selection to the terminal.
-     */
-    async sendGoal(editor: vscode.TextEditor) {
-        this.sync();
-        if (!this.notebook?.kernel.running) {
-            await this.startSession(editor);
-        }
-
-        let goal = extractGoal(editor);
-        if (!goal) {
-            vscode.window.showErrorMessage('Unable to select a goal term');
-            error('Unable to select goal term');
-            return;
-        }
-        let [locPragma, text] = goal;
-        const faketext = `proofManagerLib.g(\`${text}\`)`;
-        const realtext = `proofManagerLib.g(\`${locPragma}${text}\`)`;
-        const full = `let val x = ${realtext}; val _ = proofManagerLib.set_backup 100 in x end`
-        await this.notebook!.send(faketext, false, true, full);
-    }
-
-    /**
-     * Select a term quotation and set it up as a subgoal.
-     */
-    async sendSubgoal(editor: vscode.TextEditor) {
-        if (!this.isActive()) {
-            return;
-        }
-
-        let sg = extractSubgoal(editor);
-        if (!sg) {
-            vscode.window.showErrorMessage('Unable to select a subgoal term');
-            error('Unable to select subgoal term');
-            return;
-        }
-        let [locPragma, text] = sg;
-        const faketext = `proofManagerLib.e(sg\`${text}\`)`;
-        const realtext = `proofManagerLib.e(sg\`${locPragma}${text}\`)`;
-        await this.notebook!.send(faketext, false, true, realtext);
-    }
-
-    /**
-     * Send a tactic to the terminal.
-     */
-    async sendTactic(editor: vscode.TextEditor) {
-        if (!this.isActive()) {
-            return;
-        }
-
-        let tacticText = getSelection(editor);
-        tacticText = processTactics(tacticText);
-        const text = `proofManagerLib.e(${tacticText})`;
-        const full = addLocationPragma(text, editor.selection.start);
-
-        await this.notebook!.send(text, false, true, full);
-    }
-
-
-    /**
-     * Send a tactic line to the terminal.
-     */
-    async sendTacticLine(editor: vscode.TextEditor) {
-        if (!this.isActive()) {
-            return;
-        }
-
-        let tacticText = editor.document.lineAt(editor.selection.active.line).text;
-        tacticText = processTactics(tacticText);
-        const text = `proofManagerLib.e(${tacticText})`;
-        const full = addLocationPragma(text, editor.selection.start);
-
-        await this.notebook!.send(text, false, true, full);
-    }
-
-    /**
-     * Show current goal.
-     */
-    async showCurrentGoal() {
-        if (!this.isActive()) {
-            return;
-        }
-
-        await this.notebook!.send('proofManagerLib.p ()', false, true);
-    }
-
-
-    /**
-     * Rotate goal.
-     */
-    async rotateGoal() {
-        if (!this.isActive()) {
-            return;
-        }
-
-        await this.notebook!.send('proofManagerLib.rotate 1', false, true);
-    }
-
-    /**
-     * Step backwards goal.
-     */
-    async stepbackGoal() {
-        if (!this.isActive()) {
-            return;
-        }
-
-        await this.notebook!.send('proofManagerLib.backup ()', false, true);
-    }
-
-    /**
-     * Restart goal.
-     */
-    async restartGoal() {
-        if (!this.isActive()) {
-            return;
-        }
-
-        await this.notebook!.send('proofManagerLib.restart ()', false, true);
-    }
-
-    /**
-     * Drop goal.
-     */
-    async dropGoal() {
-        if (!this.isActive()) {
-            return;
-        }
-
-        await this.notebook!.send('proofManagerLib.drop ()', false, true);
-    }
-
-    /**
      * Toggle printing of terms with or without types.
      */
     async toggleShowTypes() {
-        if (!this.isActive()) {
+        if (!this.printingToggleAvailable()) {
             return;
         }
 
@@ -468,10 +193,32 @@ export class HOLExtensionContext {
      * Toggle printing of theorem hypotheses.
      */
     async toggleShowAssums() {
-        if (!this.isActive()) {
+        if (!this.printingToggleAvailable()) {
             return;
         }
         await this.notebook!.send('Globals.show_assums := not (!Globals.show_assums)', false, true);
+    }
+
+    /**
+     * Whether a printing toggle can do anything, saying why if not.
+     *
+     * These reach HOL by sending it an assignment, so they still need
+     * a notebook session; nothing connects them to the language
+     * server yet.  `isActive` would say "No active HOL session", which
+     * reads as though the user forgot to start something, when in the
+     * server's world there is nothing to start.
+     */
+    private printingToggleAvailable(): boolean {
+        this.sync();
+        if (this.notebook?.kernel.running) {
+            return true;
+        }
+
+        vscode.window.showErrorMessage(
+            'Printing toggles are not connected to the HOL language ' +
+            'server yet; they only take effect in a notebook session.');
+        error('printing toggle: no notebook session, and no LSP route');
+        return false;
     }
 
     /* The IDE providers used to live here, fed by the symbol

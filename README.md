@@ -139,12 +139,6 @@ what the names mean.  Any `.hol-vscode` directory left in a workspace
 Suggested additions to `settings.json` for use with [VSCodeVim](https://github.com/VSCodeVim/Vim),
 somewhat corresponding to the HOL4 Vim mode defaults:
 ```json
-{
-    "vim.visualModeKeyBindings": [
-        {
-            "before": [ "<leader>", "e" ],
-            "commands": [ "hol4-mode.sendTactic" ]
-        },
         {
             "before": [ "<leader>", "s" ],
             "commands": [ "hol4-mode.sendSelection" ]
@@ -166,38 +160,6 @@ somewhat corresponding to the HOL4 Vim mode defaults:
         {
             "before": [ "<leader>", "<leader>", "s" ],
             "commands": [ "hol4-mode.sendUntilCursor" ]
-        },
-        {
-            "before": [ "<leader>", "g" ],
-            "commands": [ "hol4-mode.sendGoal" ]
-        },
-        {
-            "before": [ "<leader>", "S" ],
-            "commands": [ "hol4-mode.sendSubgoal" ]
-        },
-        {
-            "before": [ "<leader>", "e" ],
-            "commands": [ "hol4-mode.sendTactic" ]
-        },
-        {
-            "before": [ "<leader>", "p" ],
-            "commands": [ "hol4-mode.proofmanShow" ]
-        },
-        {
-            "before": [ "<leader>", "b" ],
-            "commands": [ "hol4-mode.proofmanBack" ]
-        },
-        {
-            "before": [ "<leader>", "R" ],
-            "commands": [ "hol4-mode.proofmanRestart" ]
-        },
-        {
-            "before": [ "<leader>", "r" ],
-            "commands": [ "hol4-mode.proofmanRotate" ]
-        },
-        {
-            "before": [ "<leader>", "d" ],
-            "commands": [ "hol4-mode.proofmanDrop" ]
         },
         {
             "before": [ "<leader>", "y" ],

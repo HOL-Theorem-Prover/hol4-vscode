@@ -94,51 +94,6 @@ export function activate(context: vscode.ExtensionContext) {
             holExtensionContext?.sendUntilCursor(editor);
         }),
 
-        // Send a goal selection to the terminal.
-        vscode.commands.registerTextEditorCommand('hol4-mode.sendGoal', (editor) => {
-            holExtensionContext?.sendGoal(editor);
-        }),
-
-        // Select a term quotation and set it up as a subgoal.
-        vscode.commands.registerTextEditorCommand('hol4-mode.sendSubgoal', (editor) => {
-            holExtensionContext?.sendSubgoal(editor);
-        }),
-
-        // Send a tactic selection to the terminal.
-        vscode.commands.registerTextEditorCommand('hol4-mode.sendTactic', (editor) => {
-            holExtensionContext?.sendTactic(editor);
-        }),
-
-        // Send a tactic line to the terminal.
-        vscode.commands.registerTextEditorCommand('hol4-mode.sendTacticLine', (editor) => {
-            holExtensionContext?.sendTacticLine(editor);
-        }),
-
-        // Show goal.
-        vscode.commands.registerCommand('hol4-mode.proofmanShow', () => {
-            holExtensionContext?.showCurrentGoal();
-        }),
-
-        // Rotate goal.
-        vscode.commands.registerCommand('hol4-mode.proofmanRotate', () => {
-            holExtensionContext?.rotateGoal();
-        }),
-
-        // Step backwards goal.
-        vscode.commands.registerCommand('hol4-mode.proofmanBack', () => {
-            holExtensionContext?.stepbackGoal();
-        }),
-
-        // Restart goal.
-        vscode.commands.registerCommand('hol4-mode.proofmanRestart', () => {
-            holExtensionContext?.restartGoal();
-        }),
-
-        // Drop goal.
-        vscode.commands.registerCommand('hol4-mode.proofmanDrop', () => {
-            holExtensionContext?.dropGoal();
-        }),
-
         // Toggle printing of terms with or without types
         vscode.commands.registerCommand('hol4-mode.toggleShowTypes', () => {
             holExtensionContext?.toggleShowTypes();

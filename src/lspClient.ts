@@ -204,6 +204,14 @@ export class LspClients implements vscode.Disposable {
     private readonly clients = new Map<string, ScriptClient>();
     private readonly status: vscode.StatusBarItem;
     private readonly disposables: vscode.Disposable[] = [];
+
+    /** The HOL script most recently active.
+     *
+     * `window.activeTextEditor` is undefined while a webview panel
+     * holds focus, so a command invoked from the Goals pane has no
+     * active editor to read.  The last HOL script to be active is
+     * what the user means there: the pane is showing its goals. */
+    private lastHolDoc?: vscode.TextDocument;
     private readonly stateChanged = new vscode.EventEmitter<void>();
     private exe: string | undefined;
 
@@ -239,8 +247,12 @@ export class LspClients implements vscode.Disposable {
             // server the moment it is actually looked at.
             vscode.window.onDidChangeVisibleTextEditors(
                 () => this.syncVisibleEditors()),
-            vscode.window.onDidChangeActiveTextEditor(
-                () => this.refreshStatus()),
+            vscode.window.onDidChangeActiveTextEditor((ed) => {
+                if (ed && isHolScript(ed.document)) {
+                    this.lastHolDoc = ed.document;
+                }
+                this.refreshStatus();
+            }),
             vscode.workspace.onDidCloseTextDocument(
                 (doc) => this.closed(doc)),
             // Hover width is the one setting a running server needs to
@@ -252,12 +264,41 @@ export class LspClients implements vscode.Disposable {
                     this.sendConfigAll();
                 }
             }));
+        // Seed it: the editor active at activation never fires
+        // onDidChangeActiveTextEditor.
+        const active = vscode.window.activeTextEditor;
+        if (active && isHolScript(active.document)) {
+            this.lastHolDoc = active.document;
+        }
         this.syncVisibleEditors();
+    }
+
+    /** The script a command should act on: the active editor's, or
+     * the last one active if focus has since moved to the Goals pane.
+     * A document the user has closed is not offered. */
+    private activeHolDoc(): vscode.TextDocument | undefined {
+        const doc = vscode.window.activeTextEditor?.document;
+        if (doc && isHolScript(doc)) return doc;
+        if (this.lastHolDoc && !this.lastHolDoc.isClosed) {
+            return this.lastHolDoc;
+        }
+        return undefined;
+    }
+
+    /** As `activeHolDoc`, for the commands that need a cursor: the
+     * visible editor showing that script, if it still has one. */
+    private activeHolEditor(): vscode.TextEditor | undefined {
+        const ed = vscode.window.activeTextEditor;
+        if (ed && isHolScript(ed.document)) return ed;
+        const doc = this.activeHolDoc();
+        if (!doc) return undefined;
+        return vscode.window.visibleTextEditors.find(
+            (e) => e.document === doc);
     }
 
     /** Restart the server for the active editor's script. */
     async restartActive(): Promise<void> {
-        const doc = vscode.window.activeTextEditor?.document;
+        const doc = this.activeHolDoc();
         if (!doc || !isHolScript(doc)) {
             vscode.window.showInformationMessage(
                 'HOL LSP: the active editor is not a HOL theory script.');
@@ -280,7 +321,7 @@ export class LspClients implements vscode.Disposable {
     /** Show the output channel of the active editor's server, or the
      * only server there is if the active editor has none. */
     showOutput(): void {
-        const doc = vscode.window.activeTextEditor?.document;
+        const doc = this.activeHolDoc();
         const entry = doc ? this.clients.get(doc.uri.toString()) : undefined;
         if (entry) {
             entry.output.show(true);
@@ -314,7 +355,7 @@ export class LspClients implements vscode.Disposable {
      * ancestor has been built outside the editor and the header is
      * already what it should be. */
     retryCompileActive(): void {
-        const doc = vscode.window.activeTextEditor?.document;
+        const doc = this.activeHolDoc();
         if (!doc || !isHolScript(doc)) {
             vscode.window.showInformationMessage(
                 'HOL LSP: the active editor is not a HOL theory script.');
@@ -358,7 +399,7 @@ export class LspClients implements vscode.Disposable {
      * one goes to where it was proved.  A statement is shown as its
      * detail, newlines flattened, the widget being one line per item. */
     async searchTheorems(): Promise<void> {
-        const doc = vscode.window.activeTextEditor?.document;
+        const doc = this.activeHolDoc();
         if (!doc || !isHolScript(doc)) {
             vscode.window.showInformationMessage(
                 'HOL: open a HOL script to search from.');
@@ -655,7 +696,7 @@ export class LspClients implements vscode.Disposable {
      * and `cheated` are outstanding, and the three bad verdicts are
      * included because those are what a user most wants to reach. */
     outstandingProofs(): { name: string; status: string; line: number }[] {
-        const doc = vscode.window.activeTextEditor?.document;
+        const doc = this.activeHolDoc();
         const entry = doc && this.clients.get(doc.uri.toString());
         if (!entry?.proofs) return [];
         return [...entry.proofs]
@@ -670,7 +711,7 @@ export class LspClients implements vscode.Disposable {
 
     /** Reveal the next unsettled proof after the cursor, cycling. */
     gotoOutstandingProof(): void {
-        const editor = vscode.window.activeTextEditor;
+        const editor = this.activeHolEditor();
         const out = this.outstandingProofs();
         if (!editor || out.length === 0) {
             vscode.window.showInformationMessage(

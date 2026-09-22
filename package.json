@@ -148,62 +148,52 @@
             {
                 "command": "hol4-mode.input.convert",
                 "key": "tab",
-                "mac": "tab",
                 "when": "editorTextFocus && hol4-mode.input.isActive"
             },
             {
                 "command": "hol4-mode.startSession",
                 "key": "ctrl+h h",
-                "mac": "cmd+h h",
                 "when": "editorLangId == hol4"
             },
             {
                 "command": "hol4-mode.stopSession",
                 "key": "ctrl+h ctrl+x",
-                "mac": "cmd+h cmd+x",
-                "when": "editorLangId == hol4"
+                "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
             },
             {
                 "command": "hol4-mode.interrupt",
                 "key": "ctrl+h ctrl+c",
-                "mac": "cmd+h cmd+c",
-                "when": "editorLangId == hol4"
+                "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
             },
             {
                 "command": "hol4-mode.sendSelection",
                 "key": "ctrl+h s",
-                "mac": "cmd+h s",
                 "when": "editorLangId == hol4"
             },
             {
                 "command": "hol4-mode.sendUntilCursor",
                 "key": "ctrl+h ctrl+shift+s",
-                "mac": "cmd+h cmd+shift+s",
                 "when": "editorLangId == hol4"
             },
             {
                 "command": "hol4-mode.toggleShowTypes",
                 "key": "ctrl+h ctrl+t",
-                "mac": "cmd+h cmd+t",
-                "when": "editorLangId == hol4"
+                "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
             },
             {
                 "command": "hol4-mode.toggleShowAssums",
                 "key": "ctrl+h ctrl+a",
-                "mac": "cmd+h cmd+a",
-                "when": "editorLangId == hol4"
+                "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
             },
             {
                 "command": "hol4-mode.lsp.toggleGoalsPane",
                 "key": "ctrl+h ctrl+g",
-                "mac": "cmd+h cmd+g",
-                "when": "editorLangId == hol4"
+                "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
             },
             {
                 "command": "hol4-mode.lsp.search",
                 "key": "ctrl+h ctrl+shift+m",
-                "mac": "cmd+h cmd+shift+m",
-                "when": "editorLangId == hol4"
+                "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
             }
         ],
         "menus": {
@@ -265,17 +255,17 @@
                     "description": "Column width the language server renders hover text at, including theorem statements. VS Code does not expose the width of a hover box, so this is an estimate rather than a measurement; 50 is about what a default hover box holds. Too narrow only costs extra line breaks, while too wide makes the box scroll sideways, so err low. Raise it if you have a small font or a wide box."
                 },
                 "hol4-lsp.trace.server": {
-          "type": "string",
-          "enum": [
-            "off",
-            "messages",
-            "compact",
-            "verbose"
-          ],
-          "default": "off",
-          "description": "Record the JSON-RPC traffic between VS Code and each `bin/hol lsp` process in the matching `HOL4 LSP Trace: <file>` output channel. `messages` names each request and notification; `verbose` adds their parameters and results. For diagnosing a server that misbehaves only under VS Code: the transcript shows what was asked and in what order, which no server-side log can. Takes effect without a restart. Leave it off otherwise, as it is a lot of output."
-        },
-        "hol4-mode.lsp.executable": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "compact",
+                        "verbose"
+                    ],
+                    "default": "off",
+                    "description": "Record the JSON-RPC traffic between VS Code and each `bin/hol lsp` process in the matching `HOL4 LSP Trace: <file>` output channel. `messages` names each request and notification; `verbose` adds their parameters and results. For diagnosing a server that misbehaves only under VS Code: the transcript shows what was asked and in what order, which no server-side log can. Takes effect without a restart. Leave it off otherwise, as it is a lot of output."
+                },
+                "hol4-mode.lsp.executable": {
                     "type": "string",
                     "default": "",
                     "description": "Optional path to `bin/hol` for the LSP servers. Empty falls back to `hol4-mode.holdir/bin/hol`, then `$HOLDIR/bin/hol`."

@@ -29,18 +29,39 @@ client that speaks to `bin/hol lsp`.  This delivers:
   this script loads and, beyond them, any theory built in the project:
   those are marked *not an ancestor*, since using one means adding it
   to `Ancestors` first.
-- **Theorem search** — `Ctrl+H Ctrl+Shift+M` (or `Cmd+H Cmd+Shift+M`
-  on macOS), or *HOL: Search for theorems* in the command palette,
-  asks the theorem database what matches.  A selector is a theory in
-  single quotes, a fragment of a name in double quotes, or a term
-  pattern, and several of them narrow rather than widen:
+- **Theorem search** — `Ctrl+H Ctrl+Shift+M`, or *HOL: Search for
+  theorems* in the command palette, asks the theorem database what
+  matches.  A selector is a theory in single quotes, a fragment of a
+  name in double quotes, or a term pattern, and several of them
+  narrow rather than widen:
   `"ASSOC" 'arithmetic'`.  The hits arrive as a quick pick that
   filters as you type; picking one opens the script where it was
   proved.  This is emacs's `M-h M-M`, and searches statements, where
   `Ctrl+T` searches names.
-- **HOL Goals side pane** — press `Ctrl+H Ctrl+G` (or `Cmd+H Cmd+G`
-  on macOS) to open a pane that follows the cursor and shows the
-  proof state at each tactic step inside a `Proof … QED` block.
+- **HOL Goals side pane** — press `Ctrl+H Ctrl+G` to open a pane that
+  follows the cursor and shows the proof state at each tactic step
+  inside a `Proof … QED` block.
+
+### The `Ctrl+H` prefix, on every platform including macOS
+
+Every HOL command chord starts with `Ctrl+H`, macOS included.  `Cmd+H`
+would be the platform-native choice, but it is the key equivalent of
+*Hide* on the application menu, and AppKit gets first refusal on it:
+whenever the chord's `when` clause does not hold, the window hides
+instead.  That makes a `Cmd+H` prefix intermittent rather than wrong,
+which is worse.
+
+The cost is that `Ctrl+H` is an emacs-style *delete backwards* in
+macOS text fields, and the chord shadows it — but only where these
+bindings are active, which is HOL scripts and the Goals pane.  It
+still deletes backwards everywhere else.  To use something else,
+rebind the prefix in `keybindings.json`.
+
+Most of these bindings also hold while the Goals pane has focus, not
+only in a script: they act on the script whose goals the pane is
+showing.  The exceptions are the three that send editor text —
+starting a session, sending the selection, sending up to the cursor —
+which need a cursor and so stay confined to the editor.
 
 ### Positions and the pane width
 

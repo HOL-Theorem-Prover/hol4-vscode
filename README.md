@@ -31,13 +31,17 @@ client that speaks to `bin/hol lsp`.  This delivers:
   to `Ancestors` first.
 - **Theorem search** — `Ctrl+H Ctrl+Shift+M`, or *HOL: Search for
   theorems* in the command palette, asks the theorem database what
-  matches.  A selector is a theory in single quotes, a fragment of a
+  matches.  It prompts for one selector at a time and searches when
+  you submit an empty one, `Escape` abandoning the search instead.  A
+  selector is a theory in single quotes, a fragment of a theorem's
   name in double quotes, or a term pattern, and several of them
-  narrow rather than widen:
-  `"ASSOC" 'arithmetic'`.  The hits arrive as a quick pick that
-  filters as you type; picking one opens the script where it was
-  proved.  This is emacs's `M-h M-M`, and searches statements, where
-  `Ctrl+T` searches names.
+  narrow rather than widen — so `x + 0n = x` and then `'arithmetic'`
+  asks for that theory's theorems matching the pattern.  Two term
+  patterns are as good as one, since both have to hold, and a
+  pattern's free variables are wildcards.  The hits arrive as a quick
+  pick that filters as you type; picking one opens the script where
+  it was proved.  This is emacs's `M-h M-M`, and searches statements,
+  where `Ctrl+T` searches names.
 - **HOL Goals side pane** — press `Ctrl+H Ctrl+G` to open a pane that
   follows the cursor and shows the proof state at each tactic step
   inside a `Proof … QED` block.

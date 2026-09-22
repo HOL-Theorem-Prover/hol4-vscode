@@ -200,6 +200,36 @@ interface SearchHit {
     line: number;
 }
 
+/** Read selectors until an empty one, as emacs's `hol-lsp-search`
+ * does.  Each box shows what has been collected so far, a query built
+ * a piece at a time being easy to lose track of.
+ *
+ * Escape abandons the search; submitting an empty box runs it.  Those
+ * have to be told apart, which is why the result is undefined for the
+ * first and an array for the second -- an abandoned search must not
+ * fall through to the selectors already given.
+ *
+ * `ignoreFocusOut` because a multi-step prompt that a stray click
+ * dismisses loses work the user cannot get back. */
+async function readSelectors(): Promise<string[] | undefined> {
+    const selectors: string[] = [];
+    for (;;) {
+        const next = await vscode.window.showInputBox({
+            title: selectors.length === 0
+                ? 'HOL: search for theorems'
+                : `HOL: search for theorems \u2014 ${selectors.join('  ')}`,
+            prompt: `Selector ${selectors.length + 1}`
+                + ' (\'thy\'; "name"; term pattern), empty to search',
+            placeHolder: selectors.length === 0 ? 'x + 0n = x' : '',
+            ignoreFocusOut: true,
+        });
+        if (next === undefined) return undefined;
+        const trimmed = next.trim();
+        if (trimmed === '') return selectors;
+        selectors.push(trimmed);
+    }
+}
+
 export class LspClients implements vscode.Disposable {
     private readonly clients = new Map<string, ScriptClient>();
     private readonly status: vscode.StatusBarItem;
@@ -386,13 +416,16 @@ export class LspClients implements vscode.Disposable {
 
     /** Ask the theorem database what matches, and offer the answers.
      *
-     * The counterpart of emacs's `M-h M-m` and of `M-h M` before it: a
-     * selector is a theory in single quotes, a fragment of a theorem's
-     * name in double quotes, or a term pattern, and several of them
-     * narrow rather than widen.  One box rather than a prompt per
-     * selector, which the server splits -- a quoted run is one
-     * selector and everything left over is one pattern -- so that the
-     * same thing typed here and in emacs asks the same question.
+     * The counterpart of emacs's `M-h M-M`: a selector is a theory in
+     * single quotes, a fragment of a theorem's name in double quotes,
+     * or a term pattern, and several of them narrow rather than widen.
+     *
+     * A prompt per selector, as emacs does it, rather than one box.
+     * One box can carry only one term pattern: the server's split of a
+     * single `query' takes every unquoted run together, having no way
+     * to tell where one pattern ends and the next begins.  Sending the
+     * selectors apart is what makes `x + 0n = x' and `y * 1 = y'
+     * askable at once, which `DB.selectDB' has always answered.
      *
      * A quick pick rather than a panel: it filters as you type, which
      * is what you want having asked for fifty theorems, and picking
@@ -405,17 +438,18 @@ export class LspClients implements vscode.Disposable {
                 'HOL: open a HOL script to search from.');
             return;
         }
-        const query = await vscode.window.showInputBox({
-            title: 'HOL: search for theorems',
-            prompt: "'theory'   \"name fragment\"   term pattern " +
-                    '\u2014 combine to narrow',
-            placeHolder: '"ASSOC" \'arithmetic\'',
-        });
-        if (!query) return;
+        const selectors = await readSelectors();
+        if (!selectors) return;
+        if (selectors.length === 0) {
+            vscode.window.showInformationMessage(
+                'HOL: nothing to search for.');
+            return;
+        }
+        const query = selectors.join('  ');
         let hits: SearchHit[] | undefined;
         try {
             hits = await this.sendRequest<SearchHit[]>(
-                doc, '$/hol/search', { query, limit: 200 });
+                doc, '$/hol/search', { selectors, limit: 200 });
         } catch (err) {
             vscode.window.showErrorMessage(`HOL: search failed: ${err}`);
             return;

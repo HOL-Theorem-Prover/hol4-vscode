@@ -140,7 +140,8 @@
             },
             {
                 "command": "hol4-mode.lsp.search",
-                "title": "Search for theorems"
+                "title": "Search for theorems",
+                "category": "HOL"
             }
         ],
         "keybindings": [
@@ -196,6 +197,12 @@
                 "command": "hol4-mode.lsp.toggleGoalsPane",
                 "key": "ctrl+h ctrl+g",
                 "mac": "cmd+h cmd+g",
+                "when": "editorLangId == hol4"
+            },
+            {
+                "command": "hol4-mode.lsp.search",
+                "key": "ctrl+h ctrl+shift+m",
+                "mac": "cmd+h cmd+shift+m",
                 "when": "editorLangId == hol4"
             }
         ],

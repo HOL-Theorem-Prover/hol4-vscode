@@ -12,6 +12,7 @@ M-h M-a                                      Toggle number of assumptions [x]
 M-h M-b                                      Move cursor backwards over tactic
 M-h M-f                                      Move cursor forwards over tactic
 M-h M-r                                      Send region [like C-h s?]
+M-h M-M     C-h C-S-m                        Search theorem database (LSP)
 M-h M-s     C-h C-s /    <Leader> S          Sends term at cursor as subgoal
 M-h M-v                                      Scroll HOL window down [x]
 M-h b       C-h b   /    <Leader> ...        Back one step in goal manager

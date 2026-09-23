@@ -2,7 +2,7 @@
     "name": "hol4-mode",
     "displayName": "HOL4 mode",
     "description": "A VSCode extension for interacting with the HOL4 theorem prover",
-    "version": "0.0.50",
+    "version": "0.1.0",
     "icon" : "resources/icon.png",
     "repository": "https://github.com/HOL-Theorem-Prover/hol4-vscode",
     "engines": {

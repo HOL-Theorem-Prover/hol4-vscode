@@ -1,6 +1,6 @@
 {
     "name": "hol4-vscode",
-    "displayName": "HOL4 mode",
+    "displayName": "HOL4 + LSP mode",
     "description": "A VSCode extension for interacting with the HOL4 theorem prover",
     "version": "0.1.0",
     "icon" : "resources/icon.png",

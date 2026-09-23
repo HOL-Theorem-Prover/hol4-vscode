@@ -1,5 +1,5 @@
 {
-    "name": "hol4-mode",
+    "name": "hol4-vscode",
     "displayName": "HOL4 mode",
     "description": "A VSCode extension for interacting with the HOL4 theorem prover",
     "version": "0.1.0",

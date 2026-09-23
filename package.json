@@ -2,18 +2,20 @@
     "name": "hol4-mode",
     "displayName": "HOL4 mode",
     "description": "A VSCode extension for interacting with the HOL4 theorem prover",
-    "version": "0.0.20",
-    "repository": "https://github.com/oskarabrahamsson/hol4-vscode",
+    "version": "0.0.50",
+    "icon" : "resources/icon.png",
+    "repository": "https://github.com/HOL-Theorem-Prover/hol4-vscode",
     "engines": {
         "vscode": "^1.75.0"
     },
-    "publisher": "oskarabrahamsson",
+    "publisher": "HOL4Developers",
     "categories": [
         "Programming Languages"
     ],
     "activationEvents": [
         "onLanguage:hol4"
     ],
+    "license" : "BSD-3-Clause",
     "main": "./out/extension.js",
     "contributes": {
         "grammars": [
@@ -300,6 +302,7 @@
         "@typescript-eslint/eslint-plugin": "^8.38.0",
         "@typescript-eslint/parser": "^8.38.0",
         "@vscode/test-electron": "^2.0.3",
+        "@vscode/vsce": "^4.0.0",
         "eslint": "^9.32.0",
         "glob": "^11.0.0",
         "mocha": "^9.1.3",

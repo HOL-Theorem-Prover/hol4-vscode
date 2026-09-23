@@ -213,13 +213,7 @@ somewhat corresponding to the HOL4 Vim mode defaults:
 
 ## Known Issues
 
-- Syntax highlighting is lacking. Logical terms are especially bad. The situation
-  could be improved by implementing a HOL language server.
-- There is some hacky code that attempts to strip ML comments from input that is
-  being sent to HOL. Currently, this does not properly deal with nested comments,
-  or comment tokens that exist within string literals.
-- Comments are not stripped from tactic text.
-- `load` calls are not inserted when calls to qualified ML code is made.
+- Syntax highlighting is lacking. Logical terms are especially bad.
 - Location pragmas are not inserted at calls to `{Co}Inductive`, `Datatype`,
   `Theorem`, nor in term quotations.
 - Symbol search reaches only theories that have been built; a script

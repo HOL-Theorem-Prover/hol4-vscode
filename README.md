@@ -21,8 +21,12 @@ client that speaks to `bin/hol lsp`.  This delivers:
 
 - **Compile-driven diagnostics** in the Problems panel and inline
   squiggles as you edit.
-- **Hover** with type information from the running HOL session, and
-  a theorem's statement when the cursor is on one.
+- **Hover** with type information from the running HOL session, a
+  theorem's statement when the cursor is on one, and the identifier's
+  Reference entry where it has one, with a link to the entry's file.
+  The entries come from `Manual/build/Docfiles-processed`, which a
+  normal `bin/build` writes; a HOL built with `--no-helpdocs` has
+  none, and hovers there carry the type alone.
 - **Outline, symbol search and completion** — `Ctrl+Shift+O` for a
   file's declarations, `Ctrl+T` to search stored theorems, and
   completion of names in scope.  Symbol search covers the theories

@@ -275,6 +275,9 @@
             }
         },
         "configurationDefaults": {
+            "files.associations": {
+                "*.smd": "markdown"
+            },
             "[hol4]": {
                 "editor.unicodeHighlight.ambiguousCharacters": false,
                 "editor.tabSize": 2,

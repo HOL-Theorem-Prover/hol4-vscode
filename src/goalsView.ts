@@ -26,6 +26,10 @@ export class GoalsView implements vscode.Disposable {
      * page, no assignment.  Eglot keeps `hol-lsp--last-render' for the
      * same reason. */
     private lastHtml: string | undefined;
+    /** Whether the page currently shows a goal state rather than one
+     * of the idle messages.  A `pending' reply is kept away from a
+     * state that is already up: see `render'. */
+    private hasState = false;
     /** Pane width in characters, as last measured by the page.  75 is
      * HOL's own default, and what the server falls back to. */
     private cols = 75;
@@ -75,8 +79,10 @@ export class GoalsView implements vscode.Disposable {
             this.timer = undefined;
             this.panel = undefined;
             // A reopened pane is a fresh document, so the next render
-            // has to be written even if it says what the last one did.
+            // has to be written even if it says what the last one did,
+            // and it has nothing on it to keep.
             this.lastHtml = undefined;
+            this.hasState = false;
         });
         this.panel.webview.onDidReceiveMessage((m) => {
             if (!m || m.type !== 'cols') return;
@@ -157,7 +163,22 @@ export class GoalsView implements vscode.Disposable {
             return;
         }
         if (reply.status === 'pending') {
-            this.renderIdle('Compile in progress — goal state pending.');
+            // Not an answer but a refusal: a compile owns the
+            // process, and the same question a moment later has one.
+            // So a state already on the page stays.  This pane
+            // refreshes on every cursor movement, and replacing the
+            // state with a notice for the length of a compile is what
+            // the user sees of an edit that changed nothing.  The
+            // header names the theorem, so a state held across a
+            // cursor move reads as the one it names; hol-mode's
+            // auto-follow tick keeps its pane for the same reason.
+            //
+            // With nothing to keep -- the pane has only just opened --
+            // say why it is empty, for the reason `blocked' above
+            // says its own why.
+            if (!this.hasState) {
+                this.renderIdle('Compile in progress — goal state pending.');
+            }
             return;
         }
         if (reply.error) {
@@ -223,10 +244,12 @@ export class GoalsView implements vscode.Disposable {
             ? `<div class="note">${escapeHtml(reply.note)}</div>` : '';
         const header = thm
             ? `<div class="thm">${thm} ${stepInfo} ${opaque}</div>` : '';
+        this.hasState = true;
         this.setHtml(`${header}${tags}${note}`, body);
     }
 
     private renderIdle(message: string): void {
+        this.hasState = false;
         this.setHtml('', `<div class="idle">${escapeHtml(message)}</div>`);
     }
 

@@ -219,5 +219,28 @@ gv.renderIdle('something else');
 ok('and a changed one is written',
    panel.written.length === before + 2, panel.written.length - before);
 
+// --- a pending reply is not an answer ------------------------------
+// The server says `pending' when a compile owns the process, which it
+// still does for as long as it takes to splice the tail back after an
+// edit inside a proof body.  The pane hears about the compile finishing
+// and asks again, so that reply used to arrive just after the state it
+// replaced with a notice -- a blank pane for an edit that changed
+// nothing but whitespace.  Keep what is up; the next ask has an answer.
+console.log('\npending goal state');
+gv.render({ theorem: 'doubleL_thm', step: 24, pretty: 'the goals' });
+const held = panel.written.length;
+gv.render({ status: 'pending' });
+ok('a pending reply leaves a state the pane is showing alone',
+   panel.written.length === held &&
+     /the goals/.test(panel.written[panel.written.length - 1]),
+   panel.written.length - held);
+// With nothing to keep, it is still better than silence: a pane that
+// has only just opened would otherwise sit blank with no reason given.
+gv.renderIdle('nothing here yet');
+gv.render({ status: 'pending' });
+ok('but an empty pane says why it is empty',
+   /Compile in progress/.test(panel.written[panel.written.length - 1]),
+   panel.written[panel.written.length - 1]);
+
 console.log(fail === 0 ? '\nall checks passed' : `\n${fail} check(s) failed`);
 process.exit(fail ? 1 : 0);

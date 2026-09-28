@@ -1,17 +1,25 @@
 # HOL4 mode for Visual Studio Code
 
-Support for working with the [HOL4 interactive theorem prover](https://hol-theorem-prover.org) in
-Visual Studio Code. This plugin provides the required functionality to maintain a HOL session in an
-editor window, basic syntax highlighting, and basic unicode input completion.
-Everything else — diagnostics, hover, go-to-definition, the outline,
-symbol search and completion — comes from the HOL language server; see
-below.
+Support for working with the [HOL4 interactive theorem
+prover](https://hol-theorem-prover.org) in Visual Studio Code. This
+plugin provides the required functionality to maintain a HOL session
+in an editor window, basic syntax highlighting, and basic unicode
+input completion. Everything else — diagnostics, hover,
+go-to-definition, the outline, symbol search and completion — comes
+from the HOL language server; see below.
 
 ## Requirements
 
-Expects a HOL4 installation to exist, and the environment variable `$HOLDIR` to point to this
-installation. The HOL4 homepage can be found [here](https://hol-theorem-prover.org) and its GitHub
-repository [here](https://github.com/HOL-Theorem-Prover/HOL).
+Expects a HOL4 installation to exist, and the environment variable
+`$HOLDIR` to point to this installation. The HOL4 homepage can be
+found [here](https://hol-theorem-prover.org) and its GitHub repository
+[here](https://github.com/HOL-Theorem-Prover/HOL). The HOL4 version
+must be very recent (late September 2026 or later): `bin/hol lsp` must
+be a valid subcommand. See
+[`tools-poly/lsp/README.md`](https://github.com/HOL-Theorem-Prover/HOL/blob/develop/tools-poly/lsp/README.md)
+in the HOL4 repository for the server contract.
+
+
 
 ## HOL4 LSP integration
 
@@ -33,19 +41,17 @@ client that speaks to `bin/hol lsp`.  This delivers:
   this script loads and, beyond them, any theory built in the project:
   those are marked *not an ancestor*, since using one means adding it
   to `Ancestors` first.
-- **Theorem search** — `Ctrl+H Ctrl+Shift+M`, or *HOL: Search for
+  **Theorem search** — `Ctrl+H Ctrl+Shift+M`, or *HOL: Search for
   theorems* in the command palette, asks the theorem database what
-  matches.  It prompts for one selector at a time and searches when
-  you submit an empty one, `Escape` abandoning the search instead.  A
+  matches. It prompts for one selector at a time and searches when you
+  submit an empty one, `Escape` abandoning the search instead. A
   selector is a theory in single quotes, a fragment of a theorem's
-  name in double quotes, or a term pattern, and several of them
-  narrow rather than widen — so `x + 0n = x` and then `'arithmetic'`
-  asks for that theory's theorems matching the pattern.  Two term
-  patterns are as good as one, since both have to hold, and a
-  pattern's free variables are wildcards.  The hits arrive as a quick
-  pick that filters as you type; picking one opens the script where
-  it was proved.  This is emacs's `M-h M-M`, and searches statements,
-  where `Ctrl+T` searches names.
+  name in double quotes, or a term pattern, and several of them narrow
+  rather than widen — so `x + 0n = x` and then `'arithmetic'` asks for
+  that theory's theorems matching the pattern. The hits arrive as a
+  quick pick that filters as you type; picking one opens the script
+  where it was proved. This is emacs's `M-h M-M`, and searches
+  statements, where `Ctrl+T` searches names.
 - **HOL Goals side pane** — press `Ctrl+H Ctrl+G` to open a pane that
   follows the cursor and shows the proof state at each tactic step
   inside a `Proof … QED` block.
@@ -54,31 +60,14 @@ client that speaks to `bin/hol lsp`.  This delivers:
 
 Every HOL command chord starts with `Ctrl+H`, macOS included.  `Cmd+H`
 would be the platform-native choice, but it is the key equivalent of
-*Hide* on the application menu, and AppKit gets first refusal on it:
-whenever the chord's `when` clause does not hold, the window hides
-instead.  That makes a `Cmd+H` prefix intermittent rather than wrong,
-which is worse.
-
-The cost is that `Ctrl+H` is an emacs-style *delete backwards* in
-macOS text fields, and the chord shadows it — but only where these
-bindings are active, which is HOL scripts and the Goals pane.  It
-still deletes backwards everywhere else.  To use something else,
-rebind the prefix in `keybindings.json`.
-
-Most of these bindings also hold while the Goals pane has focus, not
-only in a script: they act on the script whose goals the pane is
-showing.  The exceptions are the three that send editor text —
-starting a session, sending the selection, sending up to the cursor —
-which need a cursor and so stay confined to the editor.
+*Hide* on the application menu
 
 ### Positions and the pane width
 
 The server picks its LSP position encoding from what this client
 advertises, which is `utf-16` — so hover, go-to-definition and the
 squiggles in the Problems panel land on the right characters even on
-lines carrying `∀`, `⇒` or `‘…’`, which used to be off by the
-difference between bytes and code units.  Nothing in the extension
-translates positions any more.
+lines carrying `∀`, `⇒` or `‘…’`.
 
 The Goals pane measures its own width and tells the server, so HOL's
 pretty printer breaks lines to fit the pane you actually have rather
@@ -94,12 +83,11 @@ against, so every name the file takes from that ancestor would draw
 its own error; instead you get one diagnostic, on the `Ancestors` /
 `Libs` entry that named the missing module, and nothing else in the
 file is compiled.  The status bar reads `HOL LSP: not compiling` and
-the Goals pane says why rather than reporting "no goal state at this
-position".
+the Goals pane says why.
 
 Build the missing dependency with `Holmake`, then edit the file's
 `Ancestors` / `Libs` header — any change to that list, including a
-change and its undo — and the server tries again.  If the header is
+change and its undo — and the server tries again. If the header is
 already right, `HOL: Compile the active script again` retries without
 touching the file.
 
@@ -123,10 +111,6 @@ Two consequences worth knowing:
   hundred megabytes.  Opening ten scripts at once starts ten of them.
 - `.sig` files and non-script `.sml` files get no server.  They
   declare no theory of their own, so there is no goal state to show.
-
-Requirements: a HOL4 build recent enough that `bin/hol lsp` is a
-valid subcommand.  See [`tools-poly/lsp/README.md`](https://github.com/HOL-Theorem-Prover/HOL/blob/develop/tools-poly/lsp/README.md)
-in the HOL4 repository for the server contract.
 
 Related settings:
 

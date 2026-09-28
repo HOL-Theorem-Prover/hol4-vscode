@@ -1,9 +1,10 @@
 # Change Log
 
-## 0.2.0
+## 0.2.1
 
-Tool-tips over SML entry-points now include links to documentation,
+- Tool-tips over SML entry-points now include links to documentation,
 where it is available.
+- README updates.
 
 ## 0.1.0
 

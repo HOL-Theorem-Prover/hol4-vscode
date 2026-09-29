@@ -162,16 +162,22 @@ export class GoalsView implements vscode.Disposable {
             this.renderIdle('No goal state at this position.');
             return;
         }
-        if (reply.status === 'pending') {
-            // Not an answer but a refusal: a compile owns the
-            // process, and the same question a moment later has one.
-            // So a state already on the page stays.  This pane
-            // refreshes on every cursor movement, and replacing the
-            // state with a notice for the length of a compile is what
-            // the user sees of an edit that changed nothing.  The
-            // header names the theorem, so a state held across a
-            // cursor move reads as the one it names; hol-mode's
-            // auto-follow tick keeps its pane for the same reason.
+        // `pending' arrives two ways.  A *refusal* carries nothing
+        // else: the walk was turned away because a compile owns the
+        // process or the ancestors are still loading.  A *provisional*
+        // answer carries a state -- the walker compiles tactics
+        // against the file's namespace, so until its `open's have run
+        // the names are not there and the walk stops at the first one
+        // it cannot apply.  The theorem is what tells them apart, and
+        // only the first is nothing to show.
+        if (reply.status === 'pending' && reply.theorem === undefined) {
+            // A state already on the page stays.  This pane refreshes
+            // on every cursor movement, and replacing the state with
+            // a notice for the length of a compile is what the user
+            // sees of an edit that changed nothing.  The header names
+            // the theorem, so a state held across a cursor move reads
+            // as the one it names; hol-mode's auto-follow tick keeps
+            // its pane for the same reason.
             //
             // With nothing to keep -- the pane has only just opened --
             // say why it is empty, for the reason `blocked' above
@@ -232,6 +238,12 @@ export class GoalsView implements vscode.Disposable {
         const stepInfo = reply.step != null
             ? `<span class="step">step ${reply.step}</span>` : '';
         const opaque = reply.opaque ? '<span class="opaque">(opaque)</span>' : '';
+        // What is below is as far as the walk got against a namespace
+        // the compile has not finished filling.  Saying so is the
+        // difference between a state that looks stale and one that
+        // looks wrong.
+        const unsettled = reply.status === 'pending'
+            ? '<span class="unsettled">still compiling</span>' : '';
         const thm = reply.theorem ? escapeHtml(reply.theorem) : '';
         // The tags say where in the proof's combinators the focus sits,
         // which is as much use as the theorem's name and is lost the
@@ -243,7 +255,8 @@ export class GoalsView implements vscode.Disposable {
         const note = reply.note
             ? `<div class="note">${escapeHtml(reply.note)}</div>` : '';
         const header = thm
-            ? `<div class="thm">${thm} ${stepInfo} ${opaque}</div>` : '';
+            ? `<div class="thm">${thm} ${stepInfo} ${opaque} ${unsettled}</div>`
+            : '';
         this.hasState = true;
         this.setHtml(`${header}${tags}${note}`, body);
     }
@@ -325,6 +338,9 @@ function wrap(head: string, body: string): string {
           color: var(--vscode-descriptionForeground); }
   .opaque { font-weight: normal;
             color: var(--vscode-editorWarning-foreground); }
+  /* Not a warning: the state is right as far as it goes. */
+  .unsettled { font-weight: normal; font-style: italic;
+               color: var(--vscode-descriptionForeground); }
   .goal { margin-bottom: 1em; }
   .hdr { color: var(--vscode-descriptionForeground);
          font-size: 0.9em; margin-bottom: 0.2em; }

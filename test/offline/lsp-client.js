@@ -246,17 +246,18 @@ ok('but an empty pane says why it is empty',
 // stopped where a tactic would not resolve, because the file's `open's
 // have not run yet.  What it reached is worth showing -- it is simply
 // not settled, and the header is where that is said.
-gv.render({ theorem: 'doubleL_thm', step: 3, status: 'pending',
-            pretty: 'as far as it got' });
+// One fixture, two statuses: the status is the whole of the difference.
+const walked = { theorem: 'doubleL_thm', step: 3, pretty: 'as far as it got' };
+gv.render({ ...walked, status: 'pending' });
 const prov = panel.written[panel.written.length - 1];
 ok('a pending reply carrying a state is rendered',
    /as far as it got/.test(prov) && /doubleL_thm/.test(prov), prov);
 ok('and the head says it is not settled',
    /still compiling/.test(headOf(prov)), headOf(prov));
-gv.render({ theorem: 'doubleL_thm', step: 3, status: 'ok',
-            pretty: 'as far as it got' });
+gv.render({ ...walked, status: 'ok' });
+const settled = panel.written[panel.written.length - 1];
 ok('a settled one says nothing of the sort',
-   !/still compiling/.test(panel.written[panel.written.length - 1]), true);
+   !/still compiling/.test(settled), headOf(settled));
 
 console.log(fail === 0 ? '\nall checks passed' : `\n${fail} check(s) failed`);
 process.exit(fail ? 1 : 0);

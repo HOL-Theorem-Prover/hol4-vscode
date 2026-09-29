@@ -238,10 +238,9 @@ export class GoalsView implements vscode.Disposable {
         const stepInfo = reply.step != null
             ? `<span class="step">step ${reply.step}</span>` : '';
         const opaque = reply.opaque ? '<span class="opaque">(opaque)</span>' : '';
-        // What is below is as far as the walk got against a namespace
-        // the compile has not finished filling.  Saying so is the
-        // difference between a state that looks stale and one that
-        // looks wrong.
+        // Provisional, in the sense `render' explains: say so, or a
+        // state that is right as far as it goes reads as one that is
+        // wrong.
         const unsettled = reply.status === 'pending'
             ? '<span class="unsettled">still compiling</span>' : '';
         const thm = reply.theorem ? escapeHtml(reply.theorem) : '';

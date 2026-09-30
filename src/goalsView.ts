@@ -187,37 +187,45 @@ export class GoalsView implements vscode.Disposable {
             }
             return;
         }
-        if (reply.error) {
-            this.renderStatus(reply, `<div class="err">${escapeHtml(reply.error)}</div>`);
-            return;
-        }
+        // An error is a banner above whatever state came with it, not a
+        // replacement for it.  A walk that gave up carries nothing else,
+        // but a step that ran and did not do what it promised sends the
+        // state it stopped at -- the undischarged goal of a `>-` branch
+        // that proves nothing is the whole point of reporting it, and
+        // rendering the message in place of the state loses exactly the
+        // thing the reader wanted.  hol-mode has always shown both: the
+        // message in its header line, the goals below it.
+        const banner = reply.error
+            ? `<div class="err">${escapeHtml(reply.error)}</div>` : '';
+        this.renderStatus(reply, banner + this.stateBody(reply));
+    }
+
+    /** The goal state on its own, without the error banner.  Empty
+     *  rather than "No open goals." when there is nothing to show and an
+     *  error is carrying the message, so the banner stands alone. */
+    private stateBody(reply: GoalStateResponse): string {
         if (reply.segments && reply.segments.length > 0) {
             // Preferred over `pretty`: same text, but each symbol
             // carries what it is, so the pane can answer the question
             // hover cannot here -- the goal text is in no file.
             const text = reply.segments.map((s) => s.text ?? '').join('');
             const skip = contextSkip(text, reply.context);
-            this.renderStatus(reply,
-                `<pre class="pretty">${
-                    segmentsToHtml(reply.segments, skip)}</pre>`);
-            return;
+            return `<pre class="pretty">${
+                segmentsToHtml(reply.segments, skip)}</pre>`;
         }
         if (reply.pretty && reply.pretty.length > 0) {
             // Colour escapes before the tag line would defeat the
             // prefix test, and then nothing is stripped -- which is the
             // safe way to be wrong.
             const skip = contextSkip(reply.pretty, reply.context);
-            this.renderStatus(reply,
-                `<pre class="pretty">${
-                    ansiToHtml(reply.pretty.slice(skip))}</pre>`);
-            return;
+            return `<pre class="pretty">${
+                ansiToHtml(reply.pretty.slice(skip))}</pre>`;
         }
         const goals = reply.goals ?? [];
         if (goals.length === 0) {
-            this.renderStatus(reply, '<div class="ok">No open goals.</div>');
-            return;
+            return reply.error ? '' : '<div class="ok">No open goals.</div>';
         }
-        const rows = goals.map((g, i) => {
+        return goals.map((g, i) => {
             // HOL convention: reverse the array so the oldest
             // assumption sits at index [0] at the top.
             const asms = (g.asms ?? []).slice().reverse().map((a, n) =>
@@ -231,7 +239,6 @@ export class GoalsView implements vscode.Disposable {
                   <div class="concl">${escapeHtml(g.goal)}</div>
                 </div>`;
         }).join('');
-        this.renderStatus(reply, rows);
     }
 
     private renderStatus(reply: GoalStateResponse, body: string): void {

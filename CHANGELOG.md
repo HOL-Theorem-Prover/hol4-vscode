@@ -1,16 +1,14 @@
 # Change Log
 
-## Unreleased
+## 0.3.0
 
 - HOL's ASCII operators are now rewritten to Unicode as you type them,
 with no leader key: `/\` gives ∧, `==>` gives ⇒, `!` gives ∀. These
-are the eleven rules of the Emacs `hol-input` method. They fire only
-inside HOL terms, so SML's `!` and `<=` are left alone, and `!!` and
-`??` give back the literal characters.
+replacements fire only inside HOL terms, so SML's `!` and `<=` are
+left alone, and `!!` and `??` give back the literal characters.
 - The backtick key now inserts HOL's Unicode quotation delimiters: one
 press gives `‘’`, a second turns the empty pair into `“”`, and on an
-existing quotation it steps over or retypes the delimiters. Ported from
-Emacs' `holscript-dbl-backquote`.
+existing quotation it steps over or retypes the delimiters.
 - `‘…’` and `“…”` are declared as brackets, so bracket matching and
 navigation now know about them.
 - `hol4-mode.input.leader` and `hol4-mode.eagerReplacement` are
@@ -42,12 +40,8 @@ one of them; with no opener in scope it was painted as an *unexpected*
 bracket — a red carrying an alpha channel, drawn over the keyword
 colour, which the token inspector does not report. Those four word
 pairs have been dropped from `brackets`, which costs `let`/`end`
-matching and the auto-indent that went with it. Restricting
-`colorizedBracketPairs` is not enough on its own: it governs only which
-*matched* pairs get a nesting colour, while unexpected brackets come
-from the bracket model built out of `brackets`.
-- New `test/offline/grammar.js` checks the grammar against a small
-TextMate stand-in; there was previously no test of the highlighting.
+matching (in SML; in HOL, there is no `end` used for
+`let`-expressions) and the auto-indent that went with it.
 
 ## 0.2.1
 

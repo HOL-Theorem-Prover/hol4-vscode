@@ -144,6 +144,12 @@
                 "command": "hol4-mode.lsp.search",
                 "title": "Search for theorems",
                 "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.input.smartQuote",
+                "title": "Input: Insert a HOL quotation",
+                "description": "Inserts ‘’, or turns an empty ‘’ into “”.",
+                "category": "HOL"
             }
         ],
         "keybindings": [
@@ -151,6 +157,11 @@
                 "command": "hol4-mode.input.convert",
                 "key": "tab",
                 "when": "editorTextFocus && hol4-mode.input.isActive"
+            },
+            {
+                "command": "hol4-mode.input.smartQuote",
+                "key": "`",
+                "when": "editorTextFocus && !editorReadonly && editorLangId == hol4"
             },
             {
                 "command": "hol4-mode.startSession",
@@ -234,6 +245,38 @@
                     "type": "string",
                     "description": "Set HOL installation directory"
                 },
+                "hol4-mode.input.leader": {
+                    "type": "string",
+                    "default": "\\",
+                    "maxLength": 1,
+                    "description": "Character that begins a Unicode abbreviation. Typing it starts an abbreviation, shown underlined until it resolves: `\\alpha` gives α, `\\r` gives ⇒. Type it twice for the character itself. Hover over any Unicode character in a HOL script to be told how to type it."
+                },
+                "hol4-mode.eagerReplacement": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Replace a leader abbreviation as soon as it can only mean one thing, rather than waiting for Tab or for the cursor to leave it."
+                },
+                "hol4-mode.input.leaderless": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Rewrite HOL's ASCII operators to Unicode as you type them, with no leader: `/\\` gives ∧, `==>` gives ⇒, `!` gives ∀. These are the eleven rules of the Emacs `hol-input` method. They fire only inside HOL terms, never in the surrounding SML, in string literals, or in a `Quote` block. `!!` gives a literal `!` and `??` a literal `?`; for anything else, undo immediately after a rewrite restores what you typed."
+                },
+                "hol4-mode.input.rules": {
+                    "type": "object",
+                    "default": {},
+                    "additionalProperties": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "markdownDescription": "Extra leaderless rewrites, merged over the built-in ones: a key is the ASCII you type, the value what replaces it, and `null` removes a built-in rule. Longest match wins, so adding a rule whose key extends a built-in one (`==` beside `==>`) makes the shorter one wait a keystroke before it settles. Use `$CURSOR` in a value to say where the cursor should land.\n\nExample: `{ \"IN\": \"∈\", \"SUBSET\": \"⊆\" }`"
+                },
+                "hol4-mode.input.smartQuotes": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Make the backtick key insert HOL's Unicode quotation delimiters: one press gives the pair ‘’ with the cursor between them, a second turns an empty pair into “”, and a press on a closing delimiter steps over it. On an existing quotation's opening delimiter it retypes the whole quotation as the other kind, and with text selected it wraps the selection. Turn this off to type literal backticks."
+                },
                 "hol4-mode.lsp.enabled": {
                     "type": "boolean",
                     "default": true,
@@ -293,7 +336,7 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js",
-        "test:offline": "npm run compile && node test/offline/proof-tally.js && node test/offline/goal-segments.js && node test/offline/goals-error-banner.js && node test/offline/lsp-client.js"
+        "test:offline": "npm run compile && node test/offline/hol-input.js && node test/offline/leaderless-input.js && node test/offline/goal-segments.js && node test/offline/goals-error-banner.js && node test/offline/lsp-client.js && node test/offline/proof-tally.js"
     },
     "dependencies": {
         "vscode-languageclient": "^9.0.1"

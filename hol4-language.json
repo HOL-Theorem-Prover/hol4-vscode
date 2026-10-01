@@ -9,7 +9,9 @@
     ["let", "end"],
     ["local", "end"],
     ["struct", "end"],
-    ["sig", "end"]
+    ["sig", "end"],
+    ["‘", "’"],
+    ["“", "”"]
   ],
   "autoClosingPairs": [
     { "open": "(", "close": ")" },

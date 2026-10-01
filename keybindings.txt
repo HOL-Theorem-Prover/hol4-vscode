@@ -30,3 +30,14 @@ M-h R       C-h R   /                        Restart goal
 M-h s       C-h s   /                        Send string to HOL
 M-h t                                        Mark tactic [x]
 M-h u                                        Use file (use "foo") [x]
+
+Input methods:
+----------------------------------------------------------
+`           `                                Insert a HOL quotation: ‘’, then “”, on an
+                                             empty pair (holscript-dbl-backquote)
+/\ \/ ==>   (same)                           Rewritten to ∧ ∨ ⇒ as typed, inside HOL
+<=> <> <=                                    terms only; the eleven rules of hol-input.el
+! ? ?!                                       ∀ ∃ ∃!, with !! and ?? for literal ! and ?
+C-\ <abbr>  \<abbr>                          Emacs toggles the Hol input method; VSCode
+                                             uses a leader, so \alpha gives α directly
+            TAB                              Resolve the abbreviation under the cursor

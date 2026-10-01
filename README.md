@@ -3,8 +3,8 @@
 Support for working with the [HOL4 interactive theorem
 prover](https://hol-theorem-prover.org) in Visual Studio Code. This
 plugin provides the required functionality to maintain a HOL session
-in an editor window, basic syntax highlighting, and basic unicode
-input completion. Everything else — diagnostics, hover,
+in an editor window, basic syntax highlighting, and Unicode input.
+Everything else — diagnostics, hover,
 go-to-definition, the outline, symbol search and completion — comes
 from the HOL language server; see below.
 
@@ -148,6 +148,54 @@ otherwise.
 The section is `hol4-lsp`, not `hol4-mode`: vscode-languageclient
 resolves it from the client's id, and that id is shared by every
 server so one setting covers them all.
+
+## Typing HOL
+
+HOL is written in Unicode — `∀x. P x ∧ Q x ⇒ R x` — and none of those
+characters are on a keyboard. There are two ways to get them, and they
+work at the same time.
+
+**Type the ASCII you would have written anyway.** Inside a HOL term,
+the ordinary ASCII operators are rewritten as you type:
+
+| type | get | type | get | type | get |
+|---|---|---|---|---|---|
+| `/\` | ∧ | `==>` | ⇒ | `!` | ∀ |
+| `\/` | ∨ | `<=>` | ⇔ | `?` | ∃ |
+| `<=` | ≤ | `<>` | ≠ | `?!` | ∃! |
+
+These are the eleven rules of the Emacs `hol-input` method, so the two
+editors behave alike. `!!` gives you a literal `!` and `??` a literal
+`?`; for anything else, undo immediately after a rewrite gives back
+what you typed.
+
+Because `!` is dereference in SML and `<=` is comparison, the rewriting
+fires **only where HOL term syntax actually lives**: inside `‘…’`,
+`“…”` and `` `…` `` quotations, and in the bodies of `Theorem`,
+`Definition`, `Datatype` and `Inductive` blocks. A `Proof` body, a
+`Termination` clause and the surrounding SML are left alone, as are
+string literals and `Quote` blocks — the latter delimit an embedded
+language such as CakeML, where HOL's notation does not belong.
+
+Add your own rules with `hol4-mode.input.rules`:
+
+```json
+"hol4-mode.input.rules": { "IN": "∈", "SUBSET": "⊆" }
+```
+
+**Or use the backslash for everything else.** `\alpha` gives α,
+`\r` gives ⇒, `\sub` gives ⊆; there are over 1600 of them. The
+abbreviation is underlined while you type it and resolves as soon as it
+can only mean one thing, or on <kbd>Tab</kbd>. Hover over any Unicode
+character in a HOL script to be told how to type it.
+
+**The backtick key writes HOL's quotation delimiters.** Press `` ` ``
+and you get `‘’` with the cursor between them; press it again on the
+empty pair and it becomes `“”`. On a closing delimiter it steps over
+it, on an opening one it retypes the whole quotation as the other kind,
+and with text selected it wraps the selection. This mirrors Emacs'
+`holscript-dbl-backquote`. Set `hol4-mode.input.smartQuotes` to `false`
+if you would rather type literal backticks.
 
 ## Extension Settings
 

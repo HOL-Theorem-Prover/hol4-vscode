@@ -6,6 +6,8 @@ import {
 } from 'vscode'
 import * as abbreviations from './unicode-completions.json'
 import { hol4selector, KERNEL_ID } from './common'
+import { classifyOffset } from './holContext'
+import { CompiledRules, Edit, InputMachine, compileRules } from './holInput'
 
 const symbolsByAbbreviation: { [abbrev: string]: string } = abbreviations
 
@@ -230,10 +232,26 @@ class TrackedAbbreviation {
 }
 
 class AbbreviationConfig {
-    public eagerReplacement =
-        workspace.getConfiguration('hol4-mode').get('eagerReplacement', true)
-    public abbreviationCharacter =
-        workspace.getConfiguration('hol4-mode').get('input.leader', '\\')
+    public eagerReplacement = true
+    public abbreviationCharacter = '\\'
+    public leaderless = true
+    public rules: CompiledRules = compileRules()
+
+    constructor() { this.refresh() }
+
+    /**
+     * Re-read the settings in place.  The same instance is shared by the
+     * rewriter and the hover provider, so mutating it is what makes a
+     * settings change reach both.
+     */
+    refresh() {
+        const cfg = workspace.getConfiguration('hol4-mode')
+        this.eagerReplacement = cfg.get('eagerReplacement', true)
+        this.abbreviationCharacter = cfg.get('input.leader', '\\')
+        this.leaderless = cfg.get('input.leaderless', true)
+        this.rules = compileRules(
+            cfg.get<Record<string, string | null>>('input.rules', {}))
+    }
 }
 
 type Replacement = {
@@ -264,11 +282,30 @@ class AbbreviationRewriter {
 
     private doNotTrackNewAbbr = false
 
+    /** The leaderless input method, if it is switched on. */
+    private machine: InputMachine | undefined
+    /** Rewrites the leaderless machine asked for during this change. */
+    private leaderlessEdits: Replacement[] = []
+    /** The range the leaderless machine wants underlined. */
+    private leaderlessPending: Range | undefined
+    /**
+     * Edits we issued ourselves and are about to see come back through
+     * `onDidChangeTextDocument`.  `!!` writes a literal `!`; were that
+     * read back as a keystroke it would fire `!` again and the escape
+     * hatch would never produce a `!` at all.
+     */
+    private selfEdits = new Set<string>()
+
     constructor(
         private readonly config: AbbreviationConfig,
         private readonly textEditor: TextEditor
     ) {
         this.checkIsVimExtensionInstalled()
+        if (config.leaderless) {
+            this.machine = new InputMachine(
+                config.rules,
+                offset => classifyOffset(this.textEditor.document.getText(), offset))
+        }
         this.disposables.push(
             this.decorationType,
 
@@ -287,12 +324,15 @@ class AbbreviationRewriter {
                 }
 
                 // Replace any tracked abbreviation that is either finished or unique.
+                const leaderless = this.leaderlessEdits
+                this.leaderlessEdits = []
                 await this.forceReplace(
                     [...this.trackedAbbreviations].filter(abbr =>
                         abbr.finished ||
                         (this.config.eagerReplacement &&
                             abbr.isAbbreviationUniqueAndComplete())
-                    )
+                    ),
+                    leaderless
                 )
 
                 this.updateState()
@@ -322,8 +362,11 @@ class AbbreviationRewriter {
         )
     }
 
-    private async forceReplace(abbreviations: TrackedAbbreviation[]): Promise<void> {
-        if (abbreviations.length === 0) {
+    private async forceReplace(
+        abbreviations: TrackedAbbreviation[],
+        extra: Replacement[] = []
+    ): Promise<void> {
+        if (abbreviations.length === 0 && extra.length === 0) {
             return
         }
         for (const a of abbreviations) {
@@ -349,6 +392,14 @@ class AbbreviationRewriter {
                     cursorOffset,
                 })
             }
+        }
+        // The leaderless rewrites ride in the same edit, so that one
+        // keystroke never produces two `TextEditor.edit` calls racing
+        // over the same document version.
+        for (const r of extra) {
+            replacements.push(r)
+            this.selfEdits.add(
+                `${r.range.offset}:${r.range.length}:${r.newText}`)
         }
         // Process replacements with lowest offset first
         replacements.sort((a, b) => a.range.offset - b.range.offset)
@@ -454,11 +505,11 @@ class AbbreviationRewriter {
     }
 
     private updateState() {
+        const underlined = [...this.trackedAbbreviations].map((a) => a.range())
+        if (this.leaderlessPending) { underlined.push(this.leaderlessPending) }
         this.textEditor.setDecorations(
             this.decorationType,
-            [...this.trackedAbbreviations].map((a) =>
-                toVsCodeRange(a.range(), this.textEditor.document)
-            )
+            underlined.map((r) => toVsCodeRange(r, this.textEditor.document))
         )
 
         void this.setInputActive(this.trackedAbbreviations.size > 0)
@@ -469,6 +520,12 @@ class AbbreviationRewriter {
     }
 
     private processChange(range: Range, text: string) {
+        // The leaderless rules get first refusal.  A rule that fires may
+        // have to reclaim a leader the tracker has already started on
+        // (`\` then `/` is `∨`), and that has to happen before the
+        // tracker shifts its ranges onto text we are about to delete.
+        const suppressLeaderStart = this.leaderlessStep(range, text)
+
         let isAnyTrackedAbbrAffected = false
         for (const abbr of [...this.trackedAbbreviations]) {
             const { isAffected, shouldStopTracking } = abbr.processChange(range, text)
@@ -480,16 +537,73 @@ class AbbreviationRewriter {
             }
         }
 
-        if (text === this.config.abbreviationCharacter && !isAnyTrackedAbbrAffected && !this.doNotTrackNewAbbr) {
+        if (text === this.config.abbreviationCharacter && !isAnyTrackedAbbrAffected &&
+            !this.doNotTrackNewAbbr && !suppressLeaderStart) {
             this.trackedAbbreviations.add(
                 new TrackedAbbreviation(new Range(range.offset + 1, 0), ''))
         }
+    }
+
+    /**
+     * Feed one document change to the leaderless input method.
+     *
+     * Returns whether the leader rewriter should ignore this change: the
+     * `\` that completes `/\` is part of `∧`, not the start of `\and`.
+     */
+    private leaderlessStep(range: Range, text: string): boolean {
+        const m = this.machine
+        if (!m) { return false }
+
+        // Our own rewrite, arriving back through the listener.  The
+        // machine already knows about it -- it asked for it -- so it must
+        // neither re-read it nor move.
+        const key = `${range.offset}:${range.length}:${text}`
+        if (this.selfEdits.delete(key)) { return false }
+
+        // Someone else's edit under `doNotTrackNewAbbr` (a leader
+        // abbreviation resolving), or anything that is not a single
+        // typed character: paste, deletion, snippet, multi-cursor.
+        if (this.doNotTrackNewAbbr || range.length !== 0 || text.length !== 1 ||
+            this.textEditor.selections.length > 1) {
+            m.reset()
+            this.leaderlessPending = undefined
+            return false
+        }
+
+        const step = m.insert(range.offset, text)
+
+        if (step.cancelLeaderOver) {
+            // The fired rule swallowed a leader that is being tracked.
+            // Drop the tracker, or it will point at deleted text.
+            const eaten = new Range(
+                step.cancelLeaderOver.offset, step.cancelLeaderOver.length)
+            for (const abbr of [...this.trackedAbbreviations]) {
+                if (!abbr.range().isAfter(eaten) && !abbr.range().isBefore(eaten)) {
+                    this.trackedAbbreviations.delete(abbr)
+                }
+            }
+        }
+
+        if (step.edit) { this.leaderlessEdits.push(toReplacement(step.edit)) }
+        this.leaderlessPending = step.pending
+            ? new Range(step.pending.offset, step.pending.length)
+            : undefined
+
+        return step.suppressLeaderStart
     }
 
     dispose() {
         for (const d of this.disposables) {
             d.dispose()
         }
+    }
+}
+
+function toReplacement(e: Edit): Replacement {
+    return {
+        range: new Range(e.offset, e.length),
+        newText: e.newText,
+        cursorOffset: e.cursorOffset,
     }
 }
 
@@ -567,7 +681,15 @@ export class AbbreviationFeature {
         this.disposables.push(
             languages.registerHoverProvider(
                 KERNEL_ID, new AbbreviationHoverProvider(this.config)),
-            window.onDidChangeActiveTextEditor(this.setEditor.bind(this)))
+            window.onDidChangeActiveTextEditor(this.setEditor.bind(this)),
+            // The leader character is baked into the tracked state and
+            // the rule table into the machine, so a settings change means
+            // rebuilding the rewriter rather than nudging it.
+            workspace.onDidChangeConfiguration(e => {
+                if (!e.affectsConfiguration('hol4-mode')) { return }
+                this.config.refresh()
+                this.setEditor(window.activeTextEditor)
+            }))
     }
 
     dispose() {

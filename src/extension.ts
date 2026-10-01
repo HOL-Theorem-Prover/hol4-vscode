@@ -3,6 +3,8 @@ import * as path from 'path';
 import { HOLExtensionContext } from './extensionContext';
 import { error, holdir } from './common';
 import { AbbreviationFeature } from './abbreviations';
+import { smartQuote } from './holInput';
+import { classifyOffset } from './holContext';
 import { LspClients } from './lspClient';
 import { GoalsView } from './goalsView';
 
@@ -160,6 +162,19 @@ export function activate(context: vscode.ExtensionContext) {
             lspClients?.searchTheorems();
         }),
 
+        // The backtick key.  HOL writes terms as `‘…’` and types as
+        // `“…”`, and neither is on a keyboard; Emacs binds this key to
+        // `holscript-dbl-backquote` for the same reason.  It is a
+        // command rather than a change listener because three of the
+        // four things it does -- stepping over a closing delimiter,
+        // retyping an existing quotation, wrapping a selection -- are
+        // not insertions, and a listener only runs once the character is
+        // already in the buffer.
+        vscode.commands.registerTextEditorCommand(
+            'hol4-mode.input.smartQuote', (editor) => {
+                void insertSmartQuote(editor);
+            }),
+
         // No language providers are registered here.  Hover,
         // definition, documentSymbol, workspaceSymbol and completion
         // all come from the language server, which
@@ -170,6 +185,48 @@ export function activate(context: vscode.ExtensionContext) {
     ];
 
     commands.forEach((cmd) => context.subscriptions.push(cmd));
+}
+
+async function insertSmartQuote(editor: vscode.TextEditor) {
+    // Hand the keystroke back to the editor's own type handler, so a
+    // literal backtick still auto-closes and still passes through any
+    // other extension that owns `type`.
+    const typeBacktick = () =>
+        vscode.commands.executeCommand('type', { text: '`' });
+
+    if (!vscode.workspace.getConfiguration('hol4-mode')
+            .get<boolean>('input.smartQuotes', true)) {
+        await typeBacktick();
+        return;
+    }
+
+    const doc = editor.document;
+    const text = doc.getText();
+    const start = doc.offsetAt(editor.selection.start);
+    const end = doc.offsetAt(editor.selection.end);
+    const action = smartQuote(text, start, end, (o) => classifyOffset(text, o));
+
+    if (action.kind === 'literal') {
+        await typeBacktick();
+        return;
+    }
+    if (action.kind === 'move') {
+        const p = doc.positionAt(action.to);
+        editor.selection = new vscode.Selection(p, p);
+        return;
+    }
+    const ok = await editor.edit((builder) => {
+        for (const e of action.edits) {
+            builder.replace(
+                new vscode.Range(doc.positionAt(e.offset),
+                                 doc.positionAt(e.offset + e.length)),
+                e.newText);
+        }
+    });
+    if (ok) {
+        const p = doc.positionAt(action.cursor);
+        editor.selection = new vscode.Selection(p, p);
+    }
 }
 
 // this method is called when your extension is deactivated

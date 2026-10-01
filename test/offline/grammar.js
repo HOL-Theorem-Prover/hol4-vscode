@@ -155,5 +155,37 @@ console.log('\nevery block keyword carries one and the same scope');
         odd.length === 0, odd);
 }
 
+console.log('\nbracket colourization leaves the keywords alone');
+{
+  // Bracket pair colourization paints *over* the token colour, and the
+  // token inspector reports only theme colours -- so `End` and
+  // `Definition` reported identical scope and foreground while visibly
+  // differing.  Bracket matching lowercases bracket text, and SML's
+  // `let`, `local`, `struct` and `sig` all close with `end`, so HOL's
+  // `End` was taken for one of them; unmatched, it was drawn as an
+  // *unexpected* bracket, a red carrying an alpha channel.
+  //
+  // `colorizedBracketPairs` does NOT fix this -- it only chooses which
+  // *matched* pairs get a nesting colour.  Unexpected brackets come from
+  // the bracket AST, which is built from `brackets`.  So `end` has to be
+  // absent from `brackets` altogether.  Verified in the Extension
+  // Development Host: restricting colorizedBracketPairs alone left the
+  // shade difference in place.
+  const cfg = JSON.parse(require('fs').readFileSync(
+    path.join(REPO, 'hol4-language.json'), 'utf8'));
+  const wordBrackets = (cfg.brackets || []).filter((pair) => pair.some((b) => b.length > 1));
+  check('no word bracket is declared, so End is never a bracket at all',
+        wordBrackets.length === 0, wordBrackets);
+  check('colorizedBracketPairs is declared',
+        Array.isArray(cfg.colorizedBracketPairs), cfg.colorizedBracketPairs);
+  const quotes = (cfg.colorizedBracketPairs || [])
+    .filter((pair) => pair.some((b) => '‘’“”'.includes(b)));
+  check('the HOL quotation marks are not given nesting colours',
+        quotes.length === 0, quotes);
+  // They stay in `brackets`, which is what matching and navigation use.
+  const matched = (cfg.brackets || []).filter((pair) => pair.some((b) => '‘’“”'.includes(b)));
+  check('but they are still matched', matched.length === 2, matched);
+}
+
 console.log(failed === 0 ? '\nall checks passed' : '\n' + failed + ' check(s) failed');
 process.exit(failed === 0 ? 0 : 1);

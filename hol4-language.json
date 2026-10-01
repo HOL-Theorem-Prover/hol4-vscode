@@ -6,12 +6,13 @@
     ["(", ")"],
     ["[", "]"],
     ["{", "}"],
-    ["let", "end"],
-    ["local", "end"],
-    ["struct", "end"],
-    ["sig", "end"],
     ["‘", "’"],
     ["“", "”"]
+  ],
+  "colorizedBracketPairs": [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"]
   ],
   "autoClosingPairs": [
     { "open": "(", "close": ")" },

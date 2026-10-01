@@ -35,6 +35,17 @@ carries the one scope `keyword.other.block.hol`. Previously each had
 its own (`End` alone had three, depending on which block it closed),
 so a theme with any rule more specific than `keyword` could render
 them in different shades.
+- `End` is no longer drawn in a different shade of red from the other
+keywords. Bracket matching ignores case, and SML's `let`, `local`,
+`struct` and `sig` all close with `end`, so HOL's `End` was taken for
+one of them; with no opener in scope it was painted as an *unexpected*
+bracket — a red carrying an alpha channel, drawn over the keyword
+colour, which the token inspector does not report. Those four word
+pairs have been dropped from `brackets`, which costs `let`/`end`
+matching and the auto-indent that went with it. Restricting
+`colorizedBracketPairs` is not enough on its own: it governs only which
+*matched* pairs get a nesting colour, while unexpected brackets come
+from the bracket model built out of `brackets`.
 - New `test/offline/grammar.js` checks the grammar against a small
 TextMate stand-in; there was previously no test of the highlighting.
 

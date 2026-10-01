@@ -46,30 +46,30 @@ for (const [name, src, spots] of BLOCKS) {
 
 console.log('\nthe script header');
 const HEADER = 'Theory ninetyOne\nAncestors\n  prim_rec arithmetic\nLibs\n  Defn TotalDefn\n\nval x = 1;\n';
-scope('Theory', HEADER, 0, 'Theory', 'keyword.other.theory');
+scope('Theory', HEADER, 0, 'Theory', 'keyword.other.block');
 scope('the theory name', HEADER, 0, 'ninetyOne', 'entity.name.theory');
-scope('Ancestors', HEADER, 1, 'Ancestors', 'keyword.other.theory');
-scope('Libs', HEADER, 3, 'Libs', 'keyword.other.theory');
+scope('Ancestors', HEADER, 1, 'Ancestors', 'keyword.other.block');
+scope('Libs', HEADER, 3, 'Libs', 'keyword.other.block');
 scope('Theory with an attribute',
-      'Theory suspSibB[bare]\nAncestors suspSibA\n', 0, 'Theory', 'keyword.other.theory');
+      'Theory suspSibB[bare]\nAncestors suspSibA\n', 0, 'Theory', 'keyword.other.block');
 scope('Ancestors with names on the same line',
-      'Theory t\nAncestors suspSibA\n', 1, 'Ancestors', 'keyword.other.theory');
+      'Theory t\nAncestors suspSibA\n', 1, 'Ancestors', 'keyword.other.block');
 scope('Ancestors with an attribute',
-      'Theory t\nAncestors[qualified]\n  arithmetic\n', 1, 'Ancestors', 'keyword.other.theory');
+      'Theory t\nAncestors[qualified]\n  arithmetic\n', 1, 'Ancestors', 'keyword.other.block');
 scope('a header does not swallow what follows',
       HEADER, 6, 'val', 'keyword.other.reserved');
 
 console.log('\nthe suspend/resume forms');
 const RESUME = 'Theory t\n\nResume willsplit[q]:\n  RES_TAC\nQED\n\nFinalise willsplit\n';
-scope('Resume', RESUME, 2, 'Resume', 'keyword.other.resume');
-scope('its QED', RESUME, 4, 'QED', 'keyword.other.qed');
-scope('Finalise', RESUME, 6, 'Finalise', 'keyword.other.theory');
+scope('Resume', RESUME, 2, 'Resume', 'keyword.other.block');
+scope('its QED', RESUME, 4, 'QED', 'keyword.other.block');
+scope('Finalise', RESUME, 6, 'Finalise', 'keyword.other.block');
 
 console.log('\nQuote blocks');
 const QUOTE = 'Quote cml = cakeml:\n  fun g x = if x <= 0 then ! else x;\nEnd\n\nTheorem t:\n  x\nProof\n  rw[]\nQED\n';
-scope('Quote', QUOTE, 0, 'Quote', 'keyword.other.quote');
-scope('its End', QUOTE, 2, 'End', 'keyword.other.def-end');
-scope('and the theorem after it is unaffected', QUOTE, 4, 'Theorem', 'keyword.other.theorem');
+scope('Quote', QUOTE, 0, 'Quote', 'keyword.other.block');
+scope('its End', QUOTE, 2, 'End', 'keyword.other.block');
+scope('and the theorem after it is unaffected', QUOTE, 4, 'Theorem', 'keyword.other.block');
 
 console.log('\na rule must not run past a closing delimiter');
 {
@@ -81,34 +81,78 @@ console.log('\na rule must not run past a closing delimiter');
   const src = 'Theorem t:\n  x\nProof\n' +
               'Q.PAT_X_ASSUM `$! m` (MP_TAC o Q.SPECL [`t DELETE f e`, `f`]) THEN\n' +
               '  rw[]\nQED\n\nTheorem later:\n  y\nProof\n  rw[]\nQED\n';
-  scope('the QED after a binder in a tactic quotation', src, 5, 'QED', 'keyword.other.qed');
-  scope('and a theorem far below it', src, 7, 'Theorem', 'keyword.other.theorem');
+  scope('the QED after a binder in a tactic quotation', src, 5, 'QED', 'keyword.other.block');
+  scope('and a theorem far below it', src, 7, 'Theorem', 'keyword.other.block');
 }
 {
   const src = 'Theorem t:\n  !x. P x\nProof\n  rw[]\nQED\n';
   scope('a binder inside a theorem statement still highlights', src, 1, '!', 'keyword.other.binder');
-  scope('and the statement still ends at Proof', src, 2, 'Proof', 'keyword.other.proof');
+  scope('and the statement still ends at Proof', src, 2, 'Proof', 'keyword.other.block');
 }
 {
   // `end` matches n backticks against n backticks via a backreference.
   const src = 'val x = ``a /\\ b``;\nTheorem t:\n  x\nProof\n  rw[]\nQED\n';
-  scope('a double-backtick quotation closes', src, 5, 'QED', 'keyword.other.qed');
+  scope('a double-backtick quotation closes', src, 5, 'QED', 'keyword.other.block');
 }
 {
   // SML string continuation: the backslash pairs with the newline.
   const src = 'val s = "line one\\\n\\ line two";\nTheorem t:\n  x\nProof\n  rw[]\nQED\n';
-  scope('a continued string closes', src, 6, 'QED', 'keyword.other.qed');
+  scope('a continued string closes', src, 6, 'QED', 'keyword.other.block');
 }
 
 console.log('\nspacing and comments');
 scope('Datatype tolerates a space before the colon',
-      'Datatype : (* extreal_TY_DEF *)\n  t = L | N\nEnd\n', 2, 'End', 'keyword.other.datatype-end');
+      'Datatype : (* extreal_TY_DEF *)\n  t = L | N\nEnd\n', 2, 'End', 'keyword.other.block');
 {
   const src = 'Theorem t:\n  x\nProof\n  rw[]\nQED\n\n(*\nDefinition f:\n  f x = x\nEnd\n*)\n';
   const tok = tokenize(grammar, src);
   const got = (scopesOf(tok, 9, 'End') || []).filter((s) => s !== 'source.hol4');
   check('End inside a comment is a comment, not a keyword',
         got.some((s) => s.startsWith('comment')) && !got.some((s) => s.startsWith('keyword')), got);
+}
+
+console.log('\nevery block keyword carries one and the same scope');
+{
+  // A theme colours by scope.  While `Theorem` was
+  // `keyword.other.theorem.hol` and the `End` closing a Datatype was
+  // `keyword.other.datatype-end.hol`, any theme with a rule more
+  // specific than `keyword` could render them in different shades --
+  // which is exactly what was reported.  One scope, one colour.
+  const src = [
+    'Theory t', 'Ancestors', '  arithmetic', 'Libs', '  bossLib', '',
+    'Definition f:', '  f x = x', 'End', '',
+    'Datatype:', '  u = L', 'End', '',
+    'Inductive r:', '  r 0', 'End', '',
+    'Quote cml = cakeml:', '  x', 'End', '',
+    'Resume w[q]:', '  RES_TAC', 'QED', '',
+    'Finalise w', '',
+    'Theorem a:', '  x', 'Proof', '  rw[]', 'QED', '',
+    'Definition g:', '  g x = x', 'Termination', '  WF_REL_TAC `$<`', 'End',
+  ].join('\n');
+  const tok = tokenize(grammar, src);
+  const spots = [
+    [0, 'Theory'], [1, 'Ancestors'], [3, 'Libs'],
+    [6, 'Definition'], [8, 'End'],
+    [10, 'Datatype'], [12, 'End'],
+    [14, 'Inductive'], [16, 'End'],
+    [18, 'Quote'], [20, 'End'],
+    [22, 'Resume'], [24, 'QED'],
+    [26, 'Finalise'],
+    [28, 'Theorem'], [30, 'Proof'], [32, 'QED'],
+    [34, 'Definition'], [36, 'Termination'], [38, 'End'],
+  ];
+  const seen = new Map();
+  for (const [line, word] of spots) {
+    const got = (scopesOf(tok, line, word) || []).filter((s) => s !== 'source.hol4');
+    seen.set(word + '@' + line, got.join(' '));
+  }
+  const distinct = [...new Set(seen.values())];
+  check('all ' + spots.length + ' of them share one scope',
+        distinct.length === 1 && distinct[0] === 'keyword.other.block.hol',
+        distinct);
+  const odd = [...seen.entries()].filter(([, v]) => v !== 'keyword.other.block.hol');
+  check('no block keyword is scoped differently from the rest',
+        odd.length === 0, odd);
 }
 
 console.log(failed === 0 ? '\nall checks passed' : '\n' + failed + ' check(s) failed');

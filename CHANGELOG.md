@@ -28,6 +28,13 @@ The quotation never closed, and every `Theorem`, `Proof`, `QED` and
 this affected 1,625 keywords in 22 files.
 - `Datatype :` with a space before the colon is recognised, as the HOL
 lexer allows.
+- Every keyword that opens or closes a block — `Theory`, `Ancestors`,
+`Libs`, `Theorem`, `Definition`, `Datatype`, `Inductive`, `Quote`,
+`Resume`, `Finalise`, `Proof`, `QED`, `Termination`, `End` — now
+carries the one scope `keyword.other.block.hol`. Previously each had
+its own (`End` alone had three, depending on which block it closed),
+so a theme with any rule more specific than `keyword` could render
+them in different shades.
 - New `test/offline/grammar.js` checks the grammar against a small
 TextMate stand-in; there was previously no test of the highlighting.
 

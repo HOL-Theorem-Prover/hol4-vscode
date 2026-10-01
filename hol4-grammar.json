@@ -92,7 +92,7 @@
       "patterns": [{ "include": "#hol-term" }]
     },
     "hol-binder": {
-      "match": "([∀λ∃\\!\\?]|∃\\!|\\?\\!|some)\\s*([^\\.]+)\\s*(\\.)",
+      "match": "(∃\\!|\\?\\!|[∀λ∃\\!\\?]|some)\\s*([^\\.\\n‘’“”`]+)\\s*(\\.)",
       "captures": {
         "1": { "name": "keyword.other.binder.hol" },
         "2": { "name": "variable.binder.hol" },
@@ -158,8 +158,66 @@
         "2": { "name": "entity.name.tag.rule-label.hol markup.underline" }
       }
     },
+    "theory-header": {
+      "match": "^(Theory)\\s+([\\w_']*)(\\[([^\\]]*)\\])?",
+      "captures": {
+        "1": { "name": "keyword.other.theory.hol" },
+        "2": { "name": "entity.name.theory.hol" },
+        "4": { "name": "entity.name.tag.attribute.hol" }
+      }
+    },
+    "theory-deps": {
+      "match": "^(Ancestors|Libs)(\\[([^\\]]*)\\])?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.other.theory.hol" },
+        "3": { "name": "entity.name.tag.attribute.hol" }
+      }
+    },
+    "theory-deps-inline": {
+      "begin": "^(Ancestors|Libs)(\\[([^\\]]*)\\])?(?=\\s)",
+      "end": "$",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.theory.hol" },
+        "3": { "name": "entity.name.tag.attribute.hol" }
+      },
+      "patterns": [{ "include": "#comments" }]
+    },
+    "resume-qed": {
+      "begin": "^(Resume)\\s+([\\w_']*)(\\[([^\\]]*)\\])?\\s*(:)",
+      "end": "^QED",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.resume.hol" },
+        "2": { "name": "entity.name.theorem.hol" },
+        "4": { "name": "entity.name.tag.attribute.hol" }
+      },
+      "endCaptures": {
+        "0": { "name": "keyword.other.qed.hol" }
+      },
+      "patterns": [{ "include": "#non-standard-ml" }]
+    },
+    "finalise": {
+      "match": "^(Finalise)\\s+([\\w_']*)(\\[([^\\]]*)\\])?",
+      "captures": {
+        "1": { "name": "keyword.other.theory.hol" },
+        "2": { "name": "entity.name.theorem.hol" },
+        "4": { "name": "entity.name.tag.attribute.hol" }
+      }
+    },
+    "quote-block": {
+      "begin": "^(Quote)\\s+([\\w_'.]+)(\\s*=\\s*([\\w_'.]+))?\\s*(:)",
+      "end": "^End",
+      "beginCaptures": {
+        "1": { "name": "keyword.other.quote.hol" },
+        "2": { "name": "entity.name.function.theorem.hol" },
+        "4": { "name": "entity.name.function.theorem.hol" }
+      },
+      "endCaptures": {
+        "0": { "name": "keyword.other.def-end.hol" }
+      },
+      "patterns": [{ "include": "#comments" }]
+    },
     "datatype": {
-      "begin": "^(Datatype):",
+      "begin": "^(Datatype)\\s*:",
       "end": "^End",
       "beginCaptures": {
         "1": { "name": "keyword.other.datatype.hol" }
@@ -245,6 +303,12 @@
     }
   },
   "patterns": [
+    { "include": "#theory-header" },
+    { "include": "#theory-deps" },
+    { "include": "#theory-deps-inline" },
+    { "include": "#quote-block" },
+    { "include": "#resume-qed" },
+    { "include": "#finalise" },
     { "include": "#theorem-assign" },
     { "include": "#theorem-proof" },
     { "include": "#proof-qed" },

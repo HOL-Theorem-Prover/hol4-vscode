@@ -1,5 +1,14 @@
 # Change Log
 
+## Unreleased
+
+- A proof split up with `suspend` and finished off in `Resume` blocks
+no longer counts as something to look at. The status bar reported
+`proofs 2/3 (1 to look at)` for a file that was complete, because the
+tally treated every status it did not recognise as a bad verdict.
+Such a proof is now counted as checked, and is no longer listed among
+the outstanding proofs the status bar jumps between.
+
 ## 0.3.0
 
 - HOL's ASCII operators are now rewritten to Unicode as you type them,

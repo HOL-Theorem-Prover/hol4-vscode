@@ -711,7 +711,19 @@ export class LspClients implements vscode.Disposable {
             // Either way it has *not* been checked, and saying so is
             // the whole point of the count.
             else if (status === 'cheated') unchecked++;
-            else if (status === 'proved') proved++;
+            // `suspended` is settled, not outstanding.  Splitting a
+            // long proof with `suspend` and finishing it off in
+            // `Resume` blocks is how the feature is meant to be used:
+            // the tactic ran, for real, and did what it said, and what
+            // is left to prove lives in the Resume blocks, which have
+            // pool entries of their own.  The server stopped treating
+            // it as a diagnostic for the same reason -- if there is
+            // nothing to squiggle there is nothing to look at.
+            else if (status === 'proved' || status === 'suspended') proved++;
+            // `failed`, `diverged`, or a status this client does not
+            // know.  An unrecognised one is counted loudly on purpose:
+            // better to point at something harmless than to hide
+            // something that matters.
             else bad++;
         }
         const total = checking + unchecked + proved + bad;
@@ -726,15 +738,17 @@ export class LspClients implements vscode.Disposable {
     }
 
     /** The proofs the pool has not settled for the active editor, in
-     * file order.  `proved` is left out: it needs nothing.  `checking`
-     * and `cheated` are outstanding, and the three bad verdicts are
+     * file order.  `proved` is left out: it needs nothing, and so is
+     * `suspended`, which the tally also counts as checked.  `checking`
+     * and `cheated` are outstanding, and the two bad verdicts are
      * included because those are what a user most wants to reach. */
     outstandingProofs(): { name: string; status: string; line: number }[] {
         const doc = this.activeHolDoc();
         const entry = doc && this.clients.get(doc.uri.toString());
         if (!entry?.proofs) return [];
         return [...entry.proofs]
-            .filter(([, v]) => v.status !== 'proved')
+            .filter(([, v]) => v.status !== 'proved'
+                               && v.status !== 'suspended')
             .map(([name, v]) => ({
                 name,
                 status: v.status === 'cheated' ? 'not checked' : v.status,

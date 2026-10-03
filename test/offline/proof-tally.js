@@ -182,6 +182,34 @@ send([st('', 'proved', 40)]);
 check('an unnamed proof is not counted',
       /proofs 2\/4 \(1 to look at\)/.test(String(statusText)), statusText);
 
+// A proof finished off with suspensions is settled, not outstanding.
+// `suspend' splits a long proof into labelled subgoals that `Resume'
+// blocks discharge; the parent's own tactic ran and did what it said.
+// The tally used to decide by exclusion -- anything not proved,
+// checking or cheated was a bad verdict -- so a complete file read
+// `proofs 2/3 (1 to look at)'.
+//
+// `two' is still failed here, which is the control: the count has to
+// stay at one, not drop to zero, or this would pass just as well with
+// the bad-verdict count broken outright.
+send([st('split', 'suspended', 50), st('split[p]', 'proved', 52),
+      st('split[q]', 'proved', 55)]);
+check('a suspension is not something to look at',
+      /proofs 5\/7 \(1 to look at\)/.test(String(statusText)), statusText);
+check('and is not listed among the outstanding proofs',
+      clients.outstandingProofs().map((p) => p.name).join(',')
+        === 'two,foo#2',
+      clients.outstandingProofs());
+
+// With the genuinely outstanding two settled, the file is done --
+// including the suspended parent, which is counted as checked.
+send([st('two', 'proved', 10), st('foo#2', 'proved', 30)]);
+check('a file finished off with suspensions reads as checked',
+      /7 proofs checked/.test(String(statusText)), statusText);
+check('with nothing left to go to',
+      clients.outstandingProofs().length === 0,
+      clients.outstandingProofs());
+
 // ---- theorem search ----------------------------------------------
 // The quick pick is what makes a search usable: it gets the hits as
 // items, and picking one opens where the theorem was proved.

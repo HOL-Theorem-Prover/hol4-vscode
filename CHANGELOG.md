@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 0.3.1
 
 - A proof split up with `suspend` and finished off in `Resume` blocks
 no longer counts as something to look at. The status bar reported

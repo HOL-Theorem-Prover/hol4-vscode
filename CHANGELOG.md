@@ -1,5 +1,16 @@
 # Change Log
 
+## Unreleased
+
+- Enter no longer accepts whatever the completion widget is offering.
+Typing `Proof` at the start of a line and pressing Enter inserted
+`ProofStepPlan`, a structure that shares the prefix and was the only
+thing on offer, because HOL's block keywords are not SML names and
+the language server had nothing else to suggest. Enter now always
+ends the line in a HOL script; Tab and Ctrl+Space still accept a
+suggestion, and setting `editor.acceptSuggestionOnEnter` yourself
+overrides this.
+
 ## 0.3.1
 
 - A proof split up with `suspend` and finished off in `Resume` blocks

@@ -322,6 +322,7 @@
                 "*.smd": "markdown"
             },
             "[hol4]": {
+                "editor.acceptSuggestionOnEnter": "off",
                 "editor.unicodeHighlight.ambiguousCharacters": false,
                 "editor.tabSize": 2,
                 "editor.insertSpaces": true,

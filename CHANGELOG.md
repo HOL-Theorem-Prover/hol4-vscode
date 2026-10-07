@@ -1,6 +1,18 @@
 # Change Log
 
-## Unreleased
+## 0.3.3
+
+- A theorem you delete no longer lingers in the proof tally. Writing a
+syntactically complete but failing `Theorem ... QED` correctly reported
+one proof to look at; deleting the whole block left it reported for the
+rest of the session, with the count wrong, the name still in the
+tooltip, and the jump-to-outstanding-proof command landing on whatever
+now occupied that line. The language server says which proofs a buffer
+still declares, and the tally keeps only those. Needs a HOL whose
+language server sends that list; against an older one the tally behaves
+as it did.
+
+## 0.3.2
 
 - Enter no longer accepts whatever the completion widget is offering.
 Typing `Proof` at the start of a line and pressing Enter inserted

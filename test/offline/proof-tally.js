@@ -14,6 +14,25 @@ const Module = require('module');
 const path = require('path');
 const REPO = path.join(__dirname, '..', '..');
 
+// `test:offline' chains these files with `&&', so one that never
+// returns stalls the suite with nothing said.  Fail instead: this
+// file once hung outright, on a prompt loop whose stub never let go.
+//
+// Not `unref'd: an unref'd timer does not hold the process up, so a
+// test left waiting on a promise that never settles would run out of
+// work and exit 0 -- a hang reported as a pass.  Holding the process
+// up costs nothing here, the run ending at the `process.exit' below.
+//
+// This catches waiting, not spinning.  A loop awaiting already-
+// resolved promises -- which is what `readSelectors' does when every
+// prompt is answered -- starves the timer queue and no watchdog in
+// this process will run.  What rules that out is the input stub
+// below, which runs out of answers.
+setTimeout(() => {
+  console.error('\nproof-tally: timed out -- something never returned');
+  process.exit(1);
+}, 30000);
+
 let statusText = null;
 const listeners = {};
 function evt(name) {
@@ -258,7 +277,13 @@ check('and is no longer somewhere to go',
 // items, and picking one opens where the theorem was proved.
 let quickPickItems = null;
 let opened = null;
-vscodeStub.window.showInputBox = async () => '"ASSOC" \'arithmetic\'';
+// `searchTheorems' reads selectors until one comes back empty, so a
+// stub answering the same thing every time never lets it go.  Each
+// case scripts the boxes it wants; an exhausted queue yields
+// `undefined', which is Escape, so a prompt nobody planned for
+// abandons the search rather than spinning.
+let boxes = [];
+vscodeStub.window.showInputBox = async () => boxes.shift();
 vscodeStub.window.showQuickPick = async (items) => {
   quickPickItems = items;
   return items[0];
@@ -288,12 +313,20 @@ clients.sendRequest = async (_doc, method, params) => {
   return hits;
 };
 
+const sels = () => asked && JSON.stringify(asked.params.selectors);
+
 (async () => {
+  boxes = ['"ASSOC"', "'arithmetic'", ''];
   await clients.searchTheorems();
   check('search asks the server', asked && asked.method === '$/hol/search',
         asked);
-  check('as one box, for the server to split',
-        asked && asked.params.query === '"ASSOC" \'arithmetic\'', asked);
+  // Sent apart, not joined into one box: the server takes every
+  // unquoted run of a single `query' together, having no way to tell
+  // where one term pattern ends and the next begins, so one box
+  // carries only one pattern.
+  check('the selectors go apart, as the user gave them',
+        sels() === JSON.stringify(['"ASSOC"', "'arithmetic'"]) &&
+        asked.params.limit === 200, asked);
   check('every hit is offered',
         quickPickItems && quickPickItems.length === hits.length,
         quickPickItems);
@@ -315,6 +348,23 @@ clients.sendRequest = async (_doc, method, params) => {
   check('picking one opens where it was proved',
         opened && String(opened) === 'file:///tmp/arithmeticScript.sml',
         opened);
+
+  // ---- the two ways the selector loop ends ------------------------
+  // An empty box runs the search; Escape abandons it.  There is no
+  // other exit, so a stub that always answers leaves the loop
+  // unbounded -- which is how this file came to hang.
+  asked = null; quickPickItems = null;
+  boxes = ['"ASSOC"', ''];
+  await clients.searchTheorems();
+  check('an empty box searches for what came before it',
+        sels() === JSON.stringify(['"ASSOC"']), asked);
+
+  asked = null; quickPickItems = null;
+  boxes = ['"ASSOC"', undefined];
+  await clients.searchTheorems();
+  check('Escape abandons the search, asking nothing',
+        asked === null && quickPickItems === null,
+        { asked, quickPickItems });
 
   console.log(failed === 0 ? '\nall checks passed'
                            : `\n${failed} check(s) failed`);

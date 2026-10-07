@@ -210,6 +210,49 @@ check('with nothing left to go to',
       clients.outstandingProofs().length === 0,
       clients.outstandingProofs());
 
+// ---- a deleted theorem leaves the tally ---------------------------
+// Write a failing proof and it is flagged; delete the whole
+// `Theorem ... QED' and it must stop being flagged.  The pool cannot
+// say which happened -- it announces a dropped entry as `cheated'
+// whether an edit merely reached the proof or the declaration is
+// gone -- so the server sends a census on `$/compileCompleted': what
+// the buffer still declares, under the names a proof there would be
+// given.  Anything it does not name has been deleted or renamed.
+//
+// Without it the entry stayed for the life of the session: the count
+// was wrong, the name was listed in the tooltip, and jumping to it
+// landed on whatever now occupies that line.
+const completed = (params) =>
+  handlers.get('$/compileCompleted')(
+    Object.assign({ uri: doc.uri.toString() }, params));
+vscodeStub.workspace.textDocuments =
+  [{ uri: doc.uri, version: 7, lineCount: 200 }];
+const live = ['one', 'foo', 'foo#2', 'split', 'split[p]', 'split[q]'];
+
+send([st('two', 'failed', 10)]);
+check('a failing proof is something to look at',
+      /proofs 6\/7 \(1 to look at\)/.test(String(statusText)), statusText);
+
+// No census at all -- the server is not checking proofs, or predates
+// the field.  That is not the same as a buffer that declares nothing,
+// and reading it that way would empty the tally on every compile.
+completed({});
+check('no census leaves the tally alone',
+      /proofs 6\/7 \(1 to look at\)/.test(String(statusText)), statusText);
+
+// A census read from text we have since edited is skipped: the pass
+// that edit starts will send one that does apply.
+completed({ version: 6, declared: [] });
+check('a census for older text is ignored',
+      /proofs 6\/7 \(1 to look at\)/.test(String(statusText)), statusText);
+
+completed({ version: 7, declared: live });
+check('the deleted proof leaves the tally',
+      /6 proofs checked/.test(String(statusText)), statusText);
+check('and is no longer somewhere to go',
+      clients.outstandingProofs().length === 0,
+      clients.outstandingProofs());
+
 // ---- theorem search ----------------------------------------------
 // The quick pick is what makes a search usable: it gets the hits as
 // items, and picking one opens where the theorem was proved.

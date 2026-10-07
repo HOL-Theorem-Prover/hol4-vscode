@@ -90,6 +90,24 @@ export interface ProofStatesParams {
     states: ProofState[];
 }
 
+/** Payload of `$/compileCompleted`: a pass over `uri` has finished.
+ *
+ * `declared` is the census -- what the buffer declares, under the names
+ * a proof there would be given, read from text `version`.  It names
+ * more than proofs (the `Theory` header, every `val` and `fun`), which
+ * costs nothing: the only question asked of it is whether a name we are
+ * holding is still declared.
+ *
+ * Both are absent unless the server is checking proofs, and absent is
+ * not the same as `[]`: absent means the server is not saying and the
+ * tally must be left alone, while `[]` means the buffer declares
+ * nothing at all. */
+export interface CompileCompletedParams {
+    uri: string;
+    version?: number;
+    declared?: string[];
+}
+
 export interface CompileBlockedParams {
     uri: string;
     modules: string[];
@@ -585,19 +603,22 @@ export class LspClients implements vscode.Disposable {
             // The file compiled, so whatever it was blocked on is
             // resolved.
             client.onNotification('$/compileCompleted',
-                () => { this.setBlocked(key, undefined);
-                        this.pruneStaleProofs(key);
-                        // Announce the compile itself, not just a
-                        // change of block.  `setBlocked` is silent when
-                        // the value does not move, and on the ordinary
-                        // startup path it never does: the file was
-                        // never blocked, so clearing the block clears
-                        // nothing and fires nothing.  The goals pane
-                        // needs to hear this -- until the compile lands
-                        // the server has no state to walk and answers
-                        // nothing, so without an event the pane sits
-                        // empty until the user moves the cursor.
-                        this.stateChanged.fire(); }),
+                (params: CompileCompletedParams) => {
+                    this.setBlocked(key, undefined);
+                    this.pruneStaleProofs(key, params?.declared,
+                                          params?.version);
+                    // Announce the compile itself, not just a change
+                    // of block.  `setBlocked` is silent when the value
+                    // does not move, and on the ordinary startup path
+                    // it never does: the file was never blocked, so
+                    // clearing the block clears nothing and fires
+                    // nothing.  The goals pane needs to hear this --
+                    // until the compile lands the server has no state
+                    // to walk and answers nothing, so without an event
+                    // the pane sits empty until the user moves the
+                    // cursor.
+                    this.stateChanged.fire();
+                }),
             client.onNotification('$/proofStates',
                 (params: ProofStatesParams) =>
                     this.noteProofStates(key, params)),
@@ -671,21 +692,38 @@ export class LspClients implements vscode.Disposable {
 
     /** Drop entries for proofs that are no longer in the document.
      *
-     * A proof still `cheated` when a compile finishes was not
-     * re-enqueued by that pass, which happens both when its theorem
-     * has been deleted and when the server did not get round to it.
-     * Those look identical from here, and dropping them silently is
-     * the worse mistake: it counted an unchecked proof as if it had
-     * been checked.  So only entries past the end of the file go. */
-    private pruneStaleProofs(key: string): void {
+     * `census` is what the server says the buffer still declares, read
+     * from text `version`; anything we hold that it does not mention
+     * has had its declaration deleted or renamed, and goes.
+     *
+     * This is the one thing a client cannot work out for itself.  A
+     * proof still `cheated` when a compile finishes was not re-enqueued
+     * by that pass, which happens both when its theorem has been
+     * deleted and when the server did not get round to it -- and those
+     * are indistinguishable from here, while dropping both counted an
+     * unchecked proof as if it had been checked.  The server holds the
+     * buffer's outline, so it can tell them apart, and says.
+     *
+     * An undefined census is the server declining to say -- it is not
+     * checking proofs, or it predates the field -- and is not the same
+     * as an empty one, which says the buffer declares nothing at all.
+     * The positional rule stays either way: it needs no census, since
+     * an entry past the end of the file cannot be anything but stale.
+     *
+     * A census read from text we have since edited is skipped.  That
+     * edit starts a pass of its own, whose census will apply. */
+    private pruneStaleProofs(key: string, census?: string[],
+                             version?: number): void {
         const entry = this.clients.get(key);
         if (!entry?.proofs) return;
         const doc = vscode.workspace.textDocuments.find(
             (d) => d.uri.toString() === key);
         if (!doc) return;
+        const fresh = version === undefined || version === doc.version;
+        const names = census && fresh ? new Set(census) : undefined;
         let dropped = false;
         for (const [k, { line }] of [...entry.proofs]) {
-            if (line >= doc.lineCount) {
+            if (line >= doc.lineCount || (names && !names.has(k))) {
                 entry.proofs.delete(k);
                 dropped = true;
             }

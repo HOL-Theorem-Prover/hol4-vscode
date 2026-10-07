@@ -162,6 +162,18 @@ export function activate(context: vscode.ExtensionContext) {
             lspClients?.searchTheorems();
         }),
 
+        // A text-editor command: what it evaluates and where it
+        // evaluates it are both the editor's selection, so it needs
+        // the editor rather than looking one up.
+        vscode.commands.registerTextEditorCommand(
+            'hol4-mode.lsp.evalSelection', (editor) => {
+                void lspClients?.evalSelection(editor);
+            }),
+
+        vscode.commands.registerCommand('hol4-mode.lsp.showEvalOutput', () => {
+            lspClients?.showEvalOutput();
+        }),
+
         // The backtick key.  HOL writes terms as `‘…’` and types as
         // `“…”`, and neither is on a keyboard; Emacs binds this key to
         // `holscript-dbl-backquote` for the same reason.  It is a

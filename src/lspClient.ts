@@ -155,6 +155,60 @@ function globEscape(p: string): string {
     return p.replace(/[*?{[]/g, (c) => `[${c}]`);
 }
 
+/** One report from a streamed `$/eval`; see
+ * `Manual/Developers/lsp-server.md`. */
+interface EvalReport {
+    kind: string;
+    /** `toplevelOut` / `compilerOut` carry `body` ... */
+    body?: string;
+    /** ... and `error` carries `msg` instead. */
+    msg?: string;
+}
+
+interface EvalStreamParams {
+    id: number | string;
+    out: EvalReport;
+}
+
+/** Append one `$/eval` report to a transcript.
+ *
+ * `toplevelOut` is what the chunk printed -- the `val it = ...` that
+ * makes this a REPL -- and `compilerOut` the compiler's own chatter.
+ * An `error` report is shown rather than thrown: the server sends one
+ * when a compile is holding the state, which is an ordinary thing to
+ * see and is fixed by asking again. */
+function appendEvalReport(
+    out: vscode.OutputChannel,
+    report: EvalReport | undefined
+): void {
+    if (!report) return;
+    if (report.kind === 'interrupted') {
+        out.appendLine('*** interrupted');
+        return;
+    }
+    if (report.kind === 'compileCompleted'
+        || report.kind === 'compileProgress') return;
+    const body = report.body ?? report.msg;
+    if (body === undefined || body === '') return;
+    const text = body.replace(/\n$/, '');
+    out.appendLine(report.kind === 'error' ? `*** ${text}` : text);
+}
+
+/** The blank-line-delimited block containing `at`. */
+function blockAround(
+    doc: vscode.TextDocument,
+    at: vscode.Position
+): vscode.Range {
+    const blank = (n: number) => doc.lineAt(n).text.trim() === '';
+    let first = at.line;
+    while (first > 0 && !blank(first - 1)) first--;
+    let last = at.line;
+    while (last < doc.lineCount - 1 && !blank(last + 1)) last++;
+    return new vscode.Range(
+        new vscode.Position(first, 0),
+        doc.lineAt(last).range.end);
+}
+
 interface ScriptClient {
     client: LanguageClient;
     output: vscode.OutputChannel;
@@ -163,6 +217,10 @@ interface ScriptClient {
      * requests against this server, and interleaving it with the
      * server's stdout would bury exactly that. */
     trace: vscode.OutputChannel;
+    /** Where `$/eval` output goes.  Its own channel, not `output`:
+     * this is a transcript the user reads back, and interleaving it
+     * with the server's stdout would bury it. */
+    evalOut: vscode.OutputChannel;
     /** `onDidChangeState` subscription; lives and dies with the client. */
     state: vscode.Disposable;
     /** Why the server is not compiling this script, or undefined if it
@@ -187,7 +245,11 @@ function disposeScriptClient(entry: ScriptClient): void {
     // of megabytes, not a rounding error.
     entry.client.stop()
         .catch(() => { /* best-effort */ })
-        .then(() => { entry.output.dispose(); entry.trace.dispose(); });
+        .then(() => {
+            entry.output.dispose();
+            entry.trace.dispose();
+            entry.evalOut.dispose();
+        });
 }
 
 /**
@@ -548,6 +610,8 @@ export class LspClients implements vscode.Disposable {
         const output = vscode.window.createOutputChannel(`HOL4 LSP: ${rel}`);
         const trace = vscode.window.createOutputChannel(
             `HOL4 LSP Trace: ${rel}`);
+        const evalOut = vscode.window.createOutputChannel(
+            `HOL4 LSP Eval: ${rel}`);
 
         // No `transport:` field: the client defaults to stdio without
         // appending the `--stdio` flag that `bin/hol lsp` rejects.
@@ -622,8 +686,69 @@ export class LspClients implements vscode.Disposable {
             client.onNotification('$/proofStates',
                 (params: ProofStatesParams) =>
                     this.noteProofStates(key, params)),
+            // `$/eval` is asked for with `incr: 2`, so its reports
+            // arrive one at a time as they happen rather than all at
+            // the end -- a long evaluation shows its output while it
+            // runs.
+            client.onNotification('$/eval/1',
+                (params: EvalStreamParams) =>
+                    appendEvalReport(evalOut, params?.out)),
         ];
-        return { client, output, trace, state, notifications };
+        return { client, output, trace, evalOut, state, notifications };
+    }
+
+    /** Evaluate a chunk of this editor's text in its own server and
+     * show what it printed.
+     *
+     * The chunk runs at the start of `range`.  A file's declarations
+     * run in order, so what is in scope is what the compile had
+     * reached by there -- a name bound further down the file is not
+     * available.  That is the context hovering a `val` typed into
+     * blank space reads; this is the same thing without editing the
+     * buffer. */
+    async evalSelection(editor: vscode.TextEditor): Promise<void> {
+        const doc = editor.document;
+        const entry = this.clients.get(doc.uri.toString());
+        if (!entry || entry.client.state !== State.Running) {
+            vscode.window.showInformationMessage(
+                'HOL: no LSP server for this file.');
+            return;
+        }
+        const sel = editor.selection;
+        // With nothing selected, the blank-line-delimited block around
+        // the cursor, which for a top-level phrase is usually it.
+        const range = sel.isEmpty ? blockAround(doc, sel.start) : sel;
+        const code = doc.getText(range);
+        if (code.trim() === '') {
+            vscode.window.showInformationMessage('HOL: nothing to evaluate.');
+            return;
+        }
+        entry.evalOut.appendLine(`> ${code.trim()}`);
+        entry.evalOut.show(true);
+        try {
+            await entry.client.sendRequest('$/eval', {
+                uri: doc.uri.toString(),
+                code,
+                incr: 2,
+                holdep: 1,
+                position: { line: range.start.line,
+                            character: range.start.character },
+            });
+        } catch (err) {
+            entry.evalOut.appendLine(`*** ${err}`);
+        }
+    }
+
+    /** Show the eval transcript for the active script. */
+    showEvalOutput(): void {
+        const doc = vscode.window.activeTextEditor?.document;
+        const entry = doc ? this.clients.get(doc.uri.toString()) : undefined;
+        if (!entry) {
+            vscode.window.showInformationMessage(
+                'HOL: no LSP server for this file.');
+            return;
+        }
+        entry.evalOut.show(true);
     }
 
     /** Tell one server the settings it cannot work out for itself.

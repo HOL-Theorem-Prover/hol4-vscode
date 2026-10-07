@@ -146,6 +146,16 @@
                 "category": "HOL"
             },
             {
+                "command": "hol4-mode.lsp.evalSelection",
+                "title": "Evaluate selection",
+                "category": "HOL"
+            },
+            {
+                "command": "hol4-mode.lsp.showEvalOutput",
+                "title": "Show evaluation output for the active script",
+                "category": "HOL"
+            },
+            {
                 "command": "hol4-mode.input.smartQuote",
                 "title": "Input: Insert a HOL quotation",
                 "description": "Inserts ‘’, or turns an empty ‘’ into “”.",
@@ -207,6 +217,11 @@
                 "command": "hol4-mode.lsp.search",
                 "key": "ctrl+h ctrl+shift+m",
                 "when": "editorLangId == hol4 || activeWebviewPanelId == 'hol4.goalsPane'"
+            },
+            {
+                "command": "hol4-mode.lsp.evalSelection",
+                "key": "ctrl+h ctrl+e",
+                "when": "editorLangId == hol4"
             }
         ],
         "menus": {

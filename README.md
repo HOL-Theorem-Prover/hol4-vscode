@@ -55,6 +55,23 @@ client that speaks to `bin/hol lsp`.  This delivers:
 - **HOL Goals side pane** — press `Ctrl+H Ctrl+G` to open a pane that
   follows the cursor and shows the proof state at each tactic step
   inside a `Proof … QED` block.
+- **Evaluate selection** — `Ctrl+H Ctrl+E`, or *HOL: Evaluate
+  selection* in the command palette, runs the selected text in the
+  server's own HOL session and appends what it printed to the *HOL4
+  LSP Eval* output channel. With nothing selected it takes the
+  blank-line-delimited block around the cursor.
+
+  It is evaluated **where the cursor is**. A file's declarations run
+  in order, so what is in scope is what the compile had reached by
+  there: a name bound further down the file is not available. This is
+  the supported form of a trick that otherwise works by accident —
+  typing `val x = <expr>` into blank space and hovering `x` — and it
+  reads the same state without editing the buffer. What one
+  evaluation binds, the next one at the same place can use.
+
+  A compile may be holding the session, in which case the server says
+  so and the command can simply be repeated. This is emacs's
+  `M-h M-E`.
 
 ### The `Ctrl+H` prefix, on every platform including macOS
 

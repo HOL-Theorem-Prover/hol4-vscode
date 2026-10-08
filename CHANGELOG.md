@@ -1,5 +1,21 @@
 # Change Log
 
+## 0.4.0
+
+- Selected text can be evaluated in the language server's own HOL
+session with `Ctrl+H Ctrl+E`, or *HOL: Evaluate selection*, and
+whatever it prints is appended to a *HOL4 LSP Eval* output channel.
+With nothing selected, the block around the cursor is sent. Getting a
+value out of the session used to mean typing `val x = ...` onto a
+blank line and hovering the name, that being the only thing that read
+the server's state; the chunk now carries the cursor's position
+instead, so it is evaluated exactly where it sits and the file is
+never touched. What one evaluation binds, the next one in the same
+place can use. A compile may be holding the session, in which case the
+server says so and the command can be repeated. Needs a HOL whose
+language server evaluates at a position and reports what a chunk
+bound; against an older one the command has nothing to show.
+
 ## 0.3.3
 
 - A theorem you delete no longer lingers in the proof tally. Writing a

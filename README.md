@@ -14,8 +14,9 @@ Expects a HOL4 installation to exist, and the environment variable
 `$HOLDIR` to point to this installation. The HOL4 homepage can be
 found [here](https://hol-theorem-prover.org) and its GitHub repository
 [here](https://github.com/HOL-Theorem-Prover/HOL). The HOL4 version
-must be very recent (late September 2026 or later): `bin/hol lsp` must
-be a valid subcommand. See
+must be very recent (October 2026 or later): `bin/hol lsp` must be a
+valid subcommand, and evaluating a selection needs a language server
+that evaluates at a position and reports what a chunk bound. See
 [`tools-poly/lsp/README.md`](https://github.com/HOL-Theorem-Prover/HOL/blob/develop/tools-poly/lsp/README.md)
 in the HOL4 repository for the server contract.
 

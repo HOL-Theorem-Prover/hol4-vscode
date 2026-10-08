@@ -151,6 +151,11 @@
                 "category": "HOL"
             },
             {
+                "command": "hol4-mode.lsp.evalPrompt",
+                "title": "Evaluate expression\u2026",
+                "category": "HOL"
+            },
+            {
                 "command": "hol4-mode.lsp.showEvalOutput",
                 "title": "Show evaluation output for the active script",
                 "category": "HOL"
@@ -352,7 +357,7 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js",
-        "test:offline": "npm run compile && node test/offline/grammar.js && node test/offline/hol-input.js && node test/offline/leaderless-input.js && node test/offline/goal-segments.js && node test/offline/goals-error-banner.js && node test/offline/lsp-client.js && node test/offline/proof-tally.js"
+        "test:offline": "npm run compile && node test/offline/grammar.js && node test/offline/hol-input.js && node test/offline/leaderless-input.js && node test/offline/goal-segments.js && node test/offline/goals-error-banner.js && node test/offline/lsp-client.js && node test/offline/proof-tally.js && node test/offline/eval-prompt.js"
     },
     "dependencies": {
         "vscode-languageclient": "^9.0.1"

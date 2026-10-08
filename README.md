@@ -59,8 +59,13 @@ client that speaks to `bin/hol lsp`.  This delivers:
 - **Evaluate selection** — `Ctrl+H Ctrl+E`, or *HOL: Evaluate
   selection* in the command palette, runs the selected text in the
   server's own HOL session and appends what it printed to the *HOL4
-  LSP Eval* output channel. With nothing selected it takes the
-  blank-line-delimited block around the cursor.
+  LSP Eval* output channel.
+
+  With nothing selected it asks for an expression instead (also *HOL:
+  Evaluate expression…*), offering the ones already asked for this
+  session, newest first. That is emacs's `M-h s`, and it is there so
+  that evaluating something the script does not contain does not mean
+  typing it into the script and deleting it again.
 
   It is evaluated **where the cursor is**. A file's declarations run
   in order, so what is in scope is what the compile had reached by
@@ -71,8 +76,8 @@ client that speaks to `bin/hol lsp`.  This delivers:
   evaluation binds, the next one at the same place can use.
 
   A compile may be holding the session, in which case the server says
-  so and the command can simply be repeated. This is emacs's
-  `M-h M-E`.
+  so and the command can simply be repeated. Evaluating a selection is
+  emacs's `M-h M-E`.
 
 ### The `Ctrl+H` prefix, on every platform including macOS
 

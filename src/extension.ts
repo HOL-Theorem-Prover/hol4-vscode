@@ -162,12 +162,19 @@ export function activate(context: vscode.ExtensionContext) {
             lspClients?.searchTheorems();
         }),
 
-        // A text-editor command: what it evaluates and where it
-        // evaluates it are both the editor's selection, so it needs
-        // the editor rather than looking one up.
+        // Text-editor commands: what they evaluate and where they
+        // evaluate it both come from the editor, so they need one
+        // rather than looking it up.  `evalSelection` falls through to
+        // `evalPrompt` when there is nothing selected; `evalPrompt` is
+        // registered as well so the box has a name in the palette.
         vscode.commands.registerTextEditorCommand(
             'hol4-mode.lsp.evalSelection', (editor) => {
                 void lspClients?.evalSelection(editor);
+            }),
+
+        vscode.commands.registerTextEditorCommand(
+            'hol4-mode.lsp.evalPrompt', (editor) => {
+                void lspClients?.evalPrompt(editor);
             }),
 
         vscode.commands.registerCommand('hol4-mode.lsp.showEvalOutput', () => {

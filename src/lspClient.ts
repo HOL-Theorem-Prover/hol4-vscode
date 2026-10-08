@@ -176,7 +176,12 @@ interface EvalStreamParams {
  * makes this a REPL -- and `compilerOut` the compiler's own chatter.
  * An `error` report is shown rather than thrown: the server sends one
  * when a compile is holding the state, which is an ordinary thing to
- * see and is fixed by asking again. */
+ * see and is fixed by asking again.
+ *
+ * A body is text, and carries its own newlines -- the server holds a
+ * line together rather than reporting the pretty printer's tokens one
+ * by one.  Only the last report of a run may be a part-line, which is
+ * what the trailing-newline strip is for. */
 function appendEvalReport(
     out: vscode.OutputChannel,
     report: EvalReport | undefined
@@ -192,21 +197,6 @@ function appendEvalReport(
     if (body === undefined || body === '') return;
     const text = body.replace(/\n$/, '');
     out.appendLine(report.kind === 'error' ? `*** ${text}` : text);
-}
-
-/** The blank-line-delimited block containing `at`. */
-function blockAround(
-    doc: vscode.TextDocument,
-    at: vscode.Position
-): vscode.Range {
-    const blank = (n: number) => doc.lineAt(n).text.trim() === '';
-    let first = at.line;
-    while (first > 0 && !blank(first - 1)) first--;
-    let last = at.line;
-    while (last < doc.lineCount - 1 && !blank(last + 1)) last++;
-    return new vscode.Range(
-        new vscode.Position(first, 0),
-        doc.lineAt(last).range.end);
 }
 
 interface ScriptClient {
@@ -310,6 +300,50 @@ async function readSelectors(): Promise<string[] | undefined> {
     }
 }
 
+/** Read an expression to evaluate, offering the ones already asked
+ * for this session.
+ *
+ * Emacs has had this since forever as `M-h s`, where the minibuffer
+ * brings its history along.  `showInputBox` has none, so this is the
+ * quick pick's object API instead: the history is its items, and the
+ * text being typed is put at the head of them so that what the user
+ * typed is always what Enter takes.  VS Code filters the rest against
+ * that text as it is typed, which narrows the history for free.
+ *
+ * Escape abandons, as in `readSelectors`.  `dispose` fires
+ * `onDidHide`, so both exits have to go through `settle` or the
+ * promise resolves twice -- the second time with `undefined`, which
+ * would read as Escape and cancel an evaluation already under way.
+ */
+function readExpression(history: string[]): Promise<string | undefined> {
+    return new Promise((resolve) => {
+        const box = vscode.window.createQuickPick();
+        const asItems = (xs: string[]) => xs.map((label) => ({ label }));
+        let settled = false;
+        const settle = (value?: string) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+            box.dispose();
+        };
+        box.title = 'HOL: evaluate';
+        box.placeholder = 'An expression to evaluate in this script\u2019s'
+            + ' session';
+        box.items = asItems(history);
+        // A quick pick that only offered its items would make the
+        // history compulsory, which is backwards: typing something new
+        // is the point.
+        box.onDidChangeValue((v) => {
+            const rest = history.filter((h) => h !== v);
+            box.items = v === '' ? asItems(rest) : asItems([v, ...rest]);
+        });
+        box.onDidAccept(() => settle(box.selectedItems[0]?.label ?? box.value));
+        box.onDidHide(() => settle(undefined));
+        box.ignoreFocusOut = true;
+        box.show();
+    });
+}
+
 export class LspClients implements vscode.Disposable {
     private readonly clients = new Map<string, ScriptClient>();
     private readonly status: vscode.StatusBarItem;
@@ -322,6 +356,13 @@ export class LspClients implements vscode.Disposable {
      * active editor to read.  The last HOL script to be active is
      * what the user means there: the pane is showing its goals. */
     private lastHolDoc?: vscode.TextDocument;
+
+    /** What `evalPrompt` has been asked to evaluate, newest first.
+     *
+     * In memory and for this window only: persisting it would mean
+     * threading an `ExtensionContext` in here for a convenience, and
+     * the expressions are often about one file's state anyway. */
+    private readonly evalHistory: string[] = [];
     private readonly stateChanged = new vscode.EventEmitter<void>();
     private exe: string | undefined;
 
@@ -697,28 +738,69 @@ export class LspClients implements vscode.Disposable {
         return { client, output, trace, evalOut, state, notifications };
     }
 
-    /** Evaluate a chunk of this editor's text in its own server and
-     * show what it printed.
+    /** Evaluate the editor's selection, or, with nothing selected,
+     * something typed into a box.
      *
-     * The chunk runs at the start of `range`.  A file's declarations
-     * run in order, so what is in scope is what the compile had
-     * reached by there -- a name bound further down the file is not
-     * available.  That is the context hovering a `val` typed into
-     * blank space reads; this is the same thing without editing the
-     * buffer. */
+     * The box is the point: getting a value out of the session used to
+     * mean typing the expression into the script, selecting it, and
+     * deleting it again.  Emacs has had `M-h s` for this all along.
+     *
+     * Either way the chunk runs at the position it was asked from.  A
+     * file's declarations run in order, so what is in scope is what
+     * the compile had reached by there -- a name bound further down
+     * the file is not available.  That is the context hovering a `val`
+     * typed into blank space reads; this is the same thing without
+     * editing the buffer. */
     async evalSelection(editor: vscode.TextEditor): Promise<void> {
-        const doc = editor.document;
+        const sel = editor.selection;
+        if (sel.isEmpty) return this.evalPrompt(editor);
+        return this.evalAt(editor.document, editor.document.getText(sel),
+                           sel.start);
+    }
+
+    /** Evaluate something typed into a box, at the editor's cursor.
+     * Reached from the palette, and from `evalSelection` when there is
+     * no selection to take instead. */
+    async evalPrompt(editor: vscode.TextEditor): Promise<void> {
+        // Asked for before the box opens, so a script with no server
+        // says so rather than taking an expression it cannot run.
+        if (!this.runningClient(editor.document)) return;
+        const code = await readExpression(this.evalHistory);
+        if (code === undefined) return;
+        if (code.trim() === '') return;
+        this.rememberExpression(code);
+        return this.evalAt(editor.document, code, editor.selection.active);
+    }
+
+    /** The server for `doc` if it is up, with the message a command
+     * owes the user if it is not. */
+    private runningClient(doc: vscode.TextDocument): ScriptClient | undefined {
         const entry = this.clients.get(doc.uri.toString());
         if (!entry || entry.client.state !== State.Running) {
             vscode.window.showInformationMessage(
                 'HOL: no LSP server for this file.');
-            return;
+            return undefined;
         }
-        const sel = editor.selection;
-        // With nothing selected, the blank-line-delimited block around
-        // the cursor, which for a top-level phrase is usually it.
-        const range = sel.isEmpty ? blockAround(doc, sel.start) : sel;
-        const code = doc.getText(range);
+        return entry;
+    }
+
+    /** Newest first, and once: an expression asked for again moves up
+     * the list rather than appearing twice in it. */
+    private rememberExpression(code: string): void {
+        const at = this.evalHistory.indexOf(code);
+        if (at >= 0) this.evalHistory.splice(at, 1);
+        this.evalHistory.unshift(code);
+        this.evalHistory.length = Math.min(this.evalHistory.length, 50);
+    }
+
+    /** Send one chunk and let its output land in the transcript. */
+    private async evalAt(
+        doc: vscode.TextDocument,
+        code: string,
+        at: vscode.Position
+    ): Promise<void> {
+        const entry = this.runningClient(doc);
+        if (!entry) return;
         if (code.trim() === '') {
             vscode.window.showInformationMessage('HOL: nothing to evaluate.');
             return;
@@ -731,8 +813,7 @@ export class LspClients implements vscode.Disposable {
                 code,
                 incr: 2,
                 holdep: 1,
-                position: { line: range.start.line,
-                            character: range.start.character },
+                position: { line: at.line, character: at.character },
             });
         } catch (err) {
             entry.evalOut.appendLine(`*** ${err}`);

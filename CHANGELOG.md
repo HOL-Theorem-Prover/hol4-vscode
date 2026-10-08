@@ -1,5 +1,26 @@
 # Change Log
 
+## 0.4.1
+
+- An evaluation's result is laid out again. `3 * 13` answered with
+`val`, a space, `it`, a space, `=` and so on down the left margin, one
+to a line. The language server renders a value with Poly's pretty
+printer, which hands over a line a piece at a time, and the streamed
+form of the request passed each of those on as its own report for this
+channel to write as a line. The server now keeps a line together until
+it is whole. Needs a HOL whose language server streams whole lines;
+against an older one the output is as it was.
+
+- `Ctrl+H Ctrl+E` with nothing selected now asks for an expression
+instead of sending the block of the script around the cursor, so
+getting a value out of the session no longer means typing it into the
+file and deleting it again — which is what the command was there to
+avoid. The box offers what has already been asked for this session,
+newest first, and the expression is evaluated at the cursor, so what is
+in scope is what a selection there would have seen. Also on the palette
+as *HOL: Evaluate expression…*. A selection, when there is one, is
+evaluated as before.
+
 ## 0.4.0
 
 - Selected text can be evaluated in the language server's own HOL

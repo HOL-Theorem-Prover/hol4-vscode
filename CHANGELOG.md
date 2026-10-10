@@ -1,5 +1,26 @@
 # Change Log
 
+## 0.4.2
+
+- A Holmake run no longer disappears the moment it finishes. *HOL: Run
+Holmake in the directory of the current document* opened a terminal
+whose shell was Holmake itself, and a terminal closes when its shell
+exits — so the panel, and everything Holmake had printed into it, went
+as soon as the build ended. A failed build, a clean one, and a Holmake
+that was never installed all looked alike. The run is now a VS Code
+task: its terminal stays, with the output still in it, and a non-zero
+exit is reported as well. A run stopped by hand is not called a
+failure, and a second run in a directory already building is refused
+rather than raced.
+
+- `Holmake` is looked for at `hol4-mode.holmake.executable`, then at
+`bin/Holmake` under `hol4-mode.holdir`, then under `$HOLDIR`, and
+finally on the `PATH`. Where none of those has it the command says so,
+instead of opening a terminal that closes again at once — which is
+what a Holmake that was not installed used to look like. The new
+`hol4-mode.holmake.args` is passed to every run, so `["-j4"]` there
+builds in parallel.
+
 ## 0.4.1
 
 - An evaluation's result is laid out again. `3 * 13` answered with

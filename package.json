@@ -334,6 +334,19 @@
                     "type": "string",
                     "default": "",
                     "description": "Optional path to `bin/hol` for the LSP servers. Empty falls back to `hol4-mode.holdir/bin/hol`, then `$HOLDIR/bin/hol`."
+                },
+                "hol4-mode.holmake.executable": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Optional path to `Holmake`. Empty falls back to `hol4-mode.holdir/bin/Holmake`, then `$HOLDIR/bin/Holmake`, then whatever `Holmake` is on your PATH."
+                },
+                "hol4-mode.holmake.args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Extra arguments passed to every `Holmake` run started from the editor, for example `[\"-j4\"]`."
                 }
             }
         },
@@ -357,7 +370,7 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js",
-        "test:offline": "npm run compile && node test/offline/grammar.js && node test/offline/hol-input.js && node test/offline/leaderless-input.js && node test/offline/goal-segments.js && node test/offline/goals-error-banner.js && node test/offline/lsp-client.js && node test/offline/proof-tally.js && node test/offline/eval-prompt.js"
+        "test:offline": "npm run compile && node test/offline/grammar.js && node test/offline/hol-input.js && node test/offline/leaderless-input.js && node test/offline/goal-segments.js && node test/offline/goals-error-banner.js && node test/offline/lsp-client.js && node test/offline/proof-tally.js && node test/offline/eval-prompt.js && node test/offline/holmake.js"
     },
     "dependencies": {
         "vscode-languageclient": "^9.0.1"

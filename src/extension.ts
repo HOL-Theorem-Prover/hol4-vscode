@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { HOLExtensionContext } from './extensionContext';
 import { error, holdir } from './common';
 import { AbbreviationFeature } from './abbreviations';
@@ -7,6 +6,7 @@ import { smartQuote } from './holInput';
 import { classifyOffset } from './holContext';
 import { LspClients } from './lspClient';
 import { GoalsView } from './goalsView';
+import { Holmake } from './holmake';
 
 
 /**
@@ -42,12 +42,18 @@ function initialize(context: vscode.ExtensionContext): HOLExtensionContext | und
 let holExtensionContext: HOLExtensionContext | undefined;
 let lspClients: LspClients | undefined;
 let goalsView: GoalsView | undefined;
+let holmake: Holmake | undefined;
 export function activate(context: vscode.ExtensionContext) {
     holExtensionContext = initialize(context);
     if (!holExtensionContext) {
         error("Unable to initialize extension.");
         return;
     }
+
+    // One per window: the exit-code listener it registers has to be
+    // registered once, not once per run.
+    holmake = new Holmake(() => holExtensionContext?.holPath);
+    context.subscriptions.push(holmake);
 
     const lspEnabled = vscode.workspace.getConfiguration('hol4-mode')
         .get<boolean>('lsp.enabled', true);
@@ -106,17 +112,19 @@ export function activate(context: vscode.ExtensionContext) {
             holExtensionContext?.toggleShowAssums();
         }),
 
-        // Run Holmake in current directory
-        vscode.commands.registerTextEditorCommand('hol4-mode.holmake', editor => {
-            const docPath = path.dirname(editor.document.uri.fsPath);
-            const terminal = vscode.window.createTerminal({
-                cwd: docPath,
-                name: 'Holmake',
-                shellPath: 'Holmake',
-                message: `Running Holmake in directory: ${docPath} ...`
-            });
-            terminal.show(true);
-        }),
+        // Run Holmake in the directory of the current document.
+        //
+        // A task rather than a terminal.  This used to be a terminal
+        // with `shellPath: 'Holmake'`, which made Holmake the
+        // terminal's root process -- and VS Code closes a terminal
+        // when its root process exits.  The output scrolled past and
+        // the panel vanished, so a failed build, a clean one, and a
+        // Holmake that was never installed all looked alike.  See
+        // src/holmake.ts.
+        vscode.commands.registerTextEditorCommand('hol4-mode.holmake',
+            (editor) => {
+                void holmake?.run(editor.document);
+            }),
 
         vscode.commands.registerCommand('hol4-mode.clearAll', async () => {
             await holExtensionContext?.notebook?.clearAll();

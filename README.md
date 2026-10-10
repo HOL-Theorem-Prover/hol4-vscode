@@ -114,6 +114,15 @@ change and its undo — and the server tries again. If the header is
 already right, `HOL: Compile the active script again` retries without
 touching the file.
 
+*HOL: Run Holmake in the directory of the current document* builds it
+without leaving the editor.  It runs as a VS Code task, so its
+terminal stays when the build ends, with the output still in it and
+the usual *press any key to close it*; a non-zero exit is reported as
+well.  (It used to be a terminal whose shell *was* Holmake, and VS
+Code closes a terminal when its shell exits — the output scrolled
+past and the panel vanished, which made a failed build, a clean one
+and a Holmake that was never installed look alike.)
+
 ### One server per script
 
 A `bin/hol lsp` process can serve exactly one theory script for its
@@ -228,6 +237,13 @@ same requests from HOL itself rather than from a regex scan of the
 sources, so there is one implementation and it is the one that knows
 what the names mean.  Any `.hol-vscode` directory left in a workspace
 (or in `$HOLDIR`) is now unused and can be deleted.
+
+`Holmake` is looked for at `hol4-mode.holmake.executable`, then at
+`bin/Holmake` under `hol4-mode.holdir`, then under `$HOLDIR`, and
+finally on your `PATH`; if none of those has it, the command says so
+rather than opening a terminal that closes again at once.
+`hol4-mode.holmake.args` is passed to every run, so `["-j4"]` there
+builds in parallel.
 
 Suggested additions to `settings.json` for use with [VSCodeVim](https://github.com/VSCodeVim/Vim),
 somewhat corresponding to the HOL4 Vim mode defaults:

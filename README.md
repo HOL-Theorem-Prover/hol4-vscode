@@ -118,10 +118,13 @@ touching the file.
 without leaving the editor.  It runs as a VS Code task, so its
 terminal stays when the build ends, with the output still in it and
 the usual *press any key to close it*; a non-zero exit is reported as
-well.  (It used to be a terminal whose shell *was* Holmake, and VS
-Code closes a terminal when its shell exits — the output scrolled
-past and the panel vanished, which made a failed build, a clean one
-and a Holmake that was never installed look alike.)
+well, as a notification and as a line in the *HOL: Editor* output
+channel.  A failed run is left with its terminal in front, so that
+what Holmake said about the failure is what you are looking at.  (It
+used to be a terminal whose shell *was* Holmake, and VS Code closes a
+terminal when its shell exits — the output scrolled past and the
+panel vanished, which made a failed build, a clean one and a Holmake
+that was never installed look alike.)
 
 ### One server per script
 

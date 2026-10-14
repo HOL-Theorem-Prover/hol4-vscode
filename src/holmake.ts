@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { error, log } from './common';
+import { error, log, logError } from './common';
 
 /**
  * Running `Holmake` from the editor, and saying how it went.
@@ -43,6 +43,18 @@ interface HolmakeTaskDefinition extends vscode.TaskDefinition {
      * src/num" a stable thing a rerun reuses, while a build in
      * another directory gets its own. */
     directory: string;
+}
+
+/** The directory a task builds, if the task is one of ours.
+ *
+ * `onDidStartTaskProcess` and `onDidEndTaskProcess` are both
+ * window-wide: every other extension's tasks arrive at them too. */
+function holmakeDir(task: vscode.Task): string | undefined {
+    const def = task.definition;
+    if (def.type !== HOLMAKE_TYPE) {
+        return undefined;
+    }
+    return typeof def.directory === 'string' ? def.directory : '';
 }
 
 /** Where Holmake was found, or why it was not. */
@@ -213,11 +225,39 @@ export class Holmake implements vscode.Disposable {
      * between claiming the slot and `executeTask` resolving. */
     private readonly running =
         new Map<string, vscode.TaskExecution | undefined>();
+    /** The terminal each directory's run writes into, once it has
+     * been identified.  This outlives the run that filled it: a
+     * `Dedicated` panel is reused by the next run in the same
+     * directory, which therefore opens no terminal of its own. */
+    private readonly terminals = new Map<string, vscode.Terminal>();
+    /** Terminals that have opened while a run was starting, held
+     * only until a run's process reports the id that picks between
+     * them.  Shared by every directory, so two builds starting at
+     * once fall back on the process id alone -- which is the answer
+     * that is trusted first in any case. */
+    private pending: vscode.Terminal[] = [];
     private readonly disposables: vscode.Disposable[] = [];
 
     constructor(private readonly holdir: () => string | undefined) {
         this.disposables.push(
-            vscode.tasks.onDidEndTaskProcess((e) => this.ended(e)));
+            vscode.tasks.onDidEndTaskProcess((e) => this.ended(e)),
+            vscode.tasks.onDidStartTaskProcess((e) => this.started(e)),
+            // The terminal VS Code opens for a task cannot be asked
+            // for: a `TaskExecution` carries the task and a
+            // `terminate`, and nothing else.  So it is noticed as it
+            // opens, and `started` decides which of them it was.
+            vscode.window.onDidOpenTerminal((t) => {
+                if (this.running.size > 0) {
+                    this.pending.push(t);
+                }
+            }),
+            vscode.window.onDidCloseTerminal((t) => {
+                for (const [d, term] of this.terminals) {
+                    if (term === t) {
+                        this.terminals.delete(d);
+                    }
+                }
+            }));
     }
 
     async run(doc: vscode.TextDocument): Promise<void> {
@@ -253,21 +293,83 @@ export class Holmake implements vscode.Disposable {
                 makeHolmakeTask(dir, found.command, args)));
         } catch (e) {
             this.running.delete(dir);
+            if (this.running.size === 0) {
+                this.pending = [];
+            }
             error(`Holmake: no task could be started (${e}); falling ` +
                   'back to a terminal, which reports no exit status');
             fallbackTerminal(dir, found.command, args);
         }
     }
 
-    private ended(e: vscode.TaskProcessEndEvent): void {
-        const def = e.execution.task.definition;
-        // `onDidEndTaskProcess` is a window-wide event: every other
-        // extension's tasks end here too.
-        if (def.type !== HOLMAKE_TYPE) {
+    /** Note which terminal a run has been given. */
+    private started(e: vscode.TaskProcessStartEvent): void {
+        const dir = holmakeDir(e.execution.task);
+        if (dir === undefined) {
             return;
         }
-        const dir = typeof def.directory === 'string' ? def.directory : '';
+        const opened = this.pending;
+        this.pending = [];
+        void this.identify(dir, e.processId, opened);
+    }
+
+    /**
+     * Which terminal a run is writing into.
+     *
+     * By process id, not by name.  A terminal's name is UI text VS
+     * Code composes from the task's source and name: it is
+     * localised, it has changed before, and `Holmake (src)` does not
+     * even name one directory in a tree with as many `src`s as HOL
+     * has.  `Terminal.processId` is the terminal's root process,
+     * which for a `ProcessExecution` task is Holmake itself, so it
+     * answers exactly.
+     *
+     * Where it answers nothing -- a pid no terminal admits to -- the
+     * one terminal that opened while this run was starting will do.
+     * Neither miss is worth reporting: what it costs is the
+     * re-reveal in `reveal` below, and the run's own
+     * `TaskRevealKind.Always` has already put the terminal up.
+     */
+    private async identify(dir: string, pid: number,
+                           opened: vscode.Terminal[]): Promise<void> {
+        for (const terminal of vscode.window.terminals) {
+            if ((await terminal.processId) === pid) {
+                this.terminals.set(dir, terminal);
+                return;
+            }
+        }
+        if (opened.length === 1) {
+            this.terminals.set(dir, opened[0]);
+        }
+    }
+
+    /** Put a run's terminal back in front of the panel. */
+    private reveal(dir: string): void {
+        const terminal = this.terminals.get(dir);
+        // A terminal the user has closed stays in the map until its
+        // close event arrives, so ask whether it is still open.
+        if (terminal && vscode.window.terminals.includes(terminal)) {
+            // `true` is `preserveFocus`, the same bargain the task
+            // strikes when it reveals at the start of a run: the
+            // output comes back to the panel, the cursor stays in
+            // the editor.
+            terminal.show(true);
+        }
+    }
+
+    private ended(e: vscode.TaskProcessEndEvent): void {
+        const dir = holmakeDir(e.execution.task);
+        // `onDidEndTaskProcess` is a window-wide event: every other
+        // extension's tasks end here too.
+        if (dir === undefined) {
+            return;
+        }
         this.running.delete(dir);
+        if (this.running.size === 0) {
+            // Nothing is starting, so nothing opening a terminal now
+            // could be ours.
+            this.pending = [];
+        }
         if (e.exitCode === 0) {
             // No notification.  The terminal is on screen with the
             // output in it; a popup would only be in the way.
@@ -280,7 +382,16 @@ export class Holmake implements vscode.Disposable {
             log(`Holmake: ${dir} was stopped before it finished`);
         } else {
             const msg = `Holmake failed in ${dir} (exit ${e.exitCode})`;
-            error(msg);
+            // `logError`, not `error`.  `error` reveals the HOL:
+            // Editor channel, and the Output view and the Terminal
+            // view are one slot at the bottom of the window -- so
+            // announcing the failure there would bury the terminal
+            // that says *where* it happened, trading a screen of
+            // compiler messages for this one line about the exit
+            // code.  The line is still written; it is just not
+            // allowed to displace the thing it summarises.
+            logError(msg);
+            this.reveal(dir);
             vscode.window.showErrorMessage(msg);
         }
     }
@@ -296,5 +407,9 @@ export class Holmake implements vscode.Disposable {
         // circumstance is no reason to abandon a build.
         this.disposables.forEach((d) => d.dispose());
         this.running.clear();
+        // The terminals themselves are not disposed, for the same
+        // reason: they belong to the window, not to us.
+        this.terminals.clear();
+        this.pending = [];
     }
 }

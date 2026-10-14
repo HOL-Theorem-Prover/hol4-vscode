@@ -18,15 +18,31 @@ export function log(message: string): void {
     // console.log(`--- hol-mode: ${message}`);
 }
 
-/** Log an error with the 'hol-mode' prefix. */
-export function error(message: string): void {
+/**
+ * Log an error with the 'hol-mode' prefix, leaving the panel alone.
+ *
+ * For a failure the user is already looking at.  The Output view and
+ * the Terminal view are the same slot at the bottom of the window, so
+ * revealing this channel *hides* a terminal -- and where the failure
+ * came with one, that terminal holds the account of it, while the
+ * line written here is only a summary.  Report through this one
+ * wherever there is somewhere better to look, and `error` elsewhere.
+ */
+export function logError(message: string): void {
     stderrOutput = stderrOutput || window.createOutputChannel('HOL: Editor');
     stderrOutput.appendLine(`Error: ${message}`);
+    // console.error(`!!! hol-mode: Error: ${message}`);
+}
+
+/** Log an error with the 'hol-mode' prefix, and bring the channel
+ * forward the first time, so that a user who has never opened it
+ * learns that it is where the extension says things. */
+export function error(message: string): void {
+    logError(message);
     if (firstError) {
         stderrOutput.show(true);
         firstError = false;
     }
-    // console.error(`!!! hol-mode: Error: ${message}`);
 }
 
 export function holdir(): string | undefined {

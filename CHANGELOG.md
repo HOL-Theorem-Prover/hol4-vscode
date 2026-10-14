@@ -1,5 +1,10 @@
 # Change Log
 
+## 0.4.3
+
+- A failed Holmake run no longer swaps the panel away from its own
+output. 
+
 ## 0.4.2
 
 - A Holmake run no longer disappears the moment it finishes. *HOL: Run

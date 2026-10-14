@@ -17,6 +17,14 @@
 // that is the extension host's behaviour, not ours.  What it pins is
 // the contract that produces it -- `close' not set, a dedicated
 // panel, and no `createTerminal' call to put `shellPath' back.
+//
+// It guards a second thing since: that a failure leaves you looking
+// at that terminal.  The Output view and the Terminal view are one
+// slot at the bottom of the window, so reporting the failure through
+// `error' -- which reveals the `HOL: Editor' channel -- hid the
+// output behind a single line naming the exit code.  The stub's
+// `show()' used to do nothing, which is why this file watched that
+// happen for a release without noticing.
 // Run with `npm run test:offline'.
 const Module = require('module');
 const path = require('path');
@@ -40,15 +48,34 @@ let terminals = [];         // createTerminal options (should stay empty)
 let errors = [];            // showErrorMessage
 let infos = [];             // showInformationMessage
 let statuses = [];          // setStatusBarMessage
-let channelLines = [];      // the HOL: Editor channel
+let channelLines = [];      // the HOL: Editor channel, flattened
+let channels = new Map();   // name -> { lines, shows }
+let openTerminals = [];     // what `window.terminals' answers
 let settings = {};          // hol4-mode.* configuration
 let folder = undefined;     // what getWorkspaceFolder answers
 let executeThrows = false;
 
+// A channel by name, created on demand, recording both what was
+// written to it and every time it was brought to the front.  The
+// stub used to return a `show()' that did nothing, which is exactly
+// why the bug this file now guards was invisible here.
+function channel(name) {
+  if (!channels.has(name)) { channels.set(name, { lines: [], shows: [] }); }
+  return channels.get(name);
+}
+
 function reset() {
+  // Retire the previous Holmake first: its event handlers are in the
+  // arrays cleared below, and a handler outliving its owner reports
+  // the next test's events to the last test's object.
+  if (live) { live.dispose(); live = null; }
   executed = []; terminals = []; errors = []; infos = [];
-  statuses = []; channelLines = []; settings = {};
+  statuses = []; channelLines = []; channels = new Map();
+  openTerminals = []; settings = {};
   folder = undefined; executeThrows = false;
+  endHandlers.length = 0; startHandlers.length = 0;
+  openHandlers.length = 0; closeHandlers.length = 0;
+  reload();
 }
 
 // ---- the vscode stub -----------------------------------------------
@@ -77,6 +104,52 @@ const endHandlers = [];
 function fireEnd(e) {
   for (const h of endHandlers.slice()) { h(e); }
 }
+const startHandlers = [];
+function fireStart(e) {
+  for (const h of startHandlers.slice()) { h(e); }
+}
+const openHandlers = [];
+const closeHandlers = [];
+
+// Subscribing, the way every one of these events does it.
+function subscribe(list, fn) {
+  list.push(fn);
+  return { dispose() {
+    const i = list.indexOf(fn);
+    if (i >= 0) { list.splice(i, 1); }
+  } };
+}
+
+/** A terminal, with the root-process id the extension identifies it
+ * by and a `show' that records its `preserveFocus' argument. */
+function fakeTerminal(pid, name) {
+  const t = {
+    name: name || 'HOL: Holmake (src)',
+    processId: Promise.resolve(pid),
+    shows: [],
+    show(preserveFocus) { t.shows.push(preserveFocus); },
+    sendText() {}, dispose() {},
+  };
+  return t;
+}
+function openTerminal(t) {
+  openTerminals.push(t);
+  for (const h of openHandlers.slice()) { h(t); }
+  return t;
+}
+function closeTerminal(t) {
+  const i = openTerminals.indexOf(t);
+  if (i >= 0) { openTerminals.splice(i, 1); }
+  for (const h of closeHandlers.slice()) { h(t); }
+}
+
+// Identifying a terminal reads `Terminal.processId', which is a
+// promise, so the extension finishes that work a turn or two after
+// the event that started it.  Wait for the queue to drain rather
+// than for a number of turns that a refactor would invalidate.
+function settle() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 const vscodeStub = {
   Uri: { file: (p) => ({ scheme: 'file', fsPath: p,
@@ -88,16 +161,27 @@ const vscodeStub = {
   TaskPanelKind: { Shared: 1, Dedicated: 2, New: 3 },
   TaskGroup: { Build: { id: 'build' } },
   window: {
-    createOutputChannel: () => ({
-      appendLine(l) { channelLines.push(l); }, show() {}, dispose() {},
-    }),
+    createOutputChannel: (name) => {
+      const c = channel(name);
+      return {
+        name,
+        appendLine(l) { c.lines.push(l); channelLines.push(l); },
+        show(preserveFocus) { c.shows.push(preserveFocus); },
+        dispose() {},
+      };
+    },
     showErrorMessage: (m) => { errors.push(m); },
     showInformationMessage: (m) => { infos.push(m); },
     setStatusBarMessage: (m) => { statuses.push(m); },
     createTerminal: (opts) => {
       terminals.push(opts);
-      return { sendText() {}, show() {}, dispose() {} };
+      return openTerminal(fakeTerminal(undefined, opts && opts.name));
     },
+    // A live view, as the real one is: a terminal opened after the
+    // extension last looked must still be there when it looks again.
+    get terminals() { return openTerminals; },
+    onDidOpenTerminal: (fn) => subscribe(openHandlers, fn),
+    onDidCloseTerminal: (fn) => subscribe(closeHandlers, fn),
   },
   workspace: {
     getConfiguration: () => ({
@@ -112,13 +196,8 @@ const vscodeStub = {
       executed.push({ task, exec });
       return exec;
     },
-    onDidEndTaskProcess: (fn) => {
-      endHandlers.push(fn);
-      return { dispose() {
-        const i = endHandlers.indexOf(fn);
-        if (i >= 0) { endHandlers.splice(i, 1); }
-      } };
-    },
+    onDidEndTaskProcess: (fn) => subscribe(endHandlers, fn),
+    onDidStartTaskProcess: (fn) => subscribe(startHandlers, fn),
   },
 };
 
@@ -131,7 +210,30 @@ require.cache['vscode'] = {
   id: 'vscode', filename: 'vscode', loaded: true, exports: vscodeStub,
 };
 
-const { Holmake } = require(path.join(REPO, 'out/holmake.js'));
+// `out/common.js' keeps two pieces of module-level state: the
+// `HOL: Editor' channel, and a `firstError' latch that lets the very
+// first error of a session -- and only that one -- bring the channel
+// to the front.  One latch per node process means one for this whole
+// file, and the checks above spend it long before the ones below
+// run: a reveal assertion written at the bottom of the file would
+// see nothing *whether or not the bug were present*, and pass for
+// the wrong reason.  So each block starts from freshly loaded
+// modules.  Both must go: `out/holmake.js' binds the common module's
+// exports object once, so dropping only `out/common.js' leaves it
+// talking to the old one.  The `vscode' entry stays -- that is the
+// stub, and `require.resolve' never sees it, the hook above
+// intercepting only the literal name.
+//
+// The other offline tests require their module once and never reset
+// it; this one is the first that cannot.
+let Holmake;
+function reload() {
+  for (const m of ['out/common.js', 'out/holmake.js']) {
+    delete require.cache[require.resolve(path.join(REPO, m))];
+  }
+  ({ Holmake } = require(path.join(REPO, 'out/holmake.js')));
+}
+reload();
 
 let failed = 0;
 function check(label, cond, got) {
@@ -265,6 +367,27 @@ function holmake(dir) {
           channelLines.some((l) => /succeeded/.test(l)),
         { statuses, channelLines });
 
+  // ---- which panel a failure leaves you looking at -------------------
+  // The Output view and the Terminal view are one slot at the bottom
+  // of the window, so revealing `HOL: Editor' -- whose entire
+  // contribution is a line naming the exit code -- buries the
+  // terminal, which holds the compiler messages saying where the
+  // build actually broke.
+  //
+  // The positive control comes first, and has to: it proves the stub
+  // really records `show()' and that the `firstError' latch really
+  // is fresh in this block.  Without it a recorder that never fired
+  // would be indistinguishable from a bug that was fixed.
+  reset();
+  process.env.PATH = emptyDir;
+  await holmake(undefined).run(DOC);
+  check('a refusal, which has no terminal to show instead, reveals the log',
+        channel('HOL: Editor').shows.length === 1,
+        channel('HOL: Editor').shows);
+  check('and reveals it without taking focus',
+        channel('HOL: Editor').shows[0] === true,
+        channel('HOL: Editor').shows);
+
   reset();
   const bad = holmake(holdir);
   await bad.run(DOC);
@@ -272,6 +395,13 @@ function holmake(dir) {
   check('a failed run is reported, with its directory and its code',
         errors.length === 1 && errors[0].includes(SRC) &&
           errors[0].includes('2'), errors);
+  check('and is written to the log as an error',
+        channel('HOL: Editor').lines.some(
+          (l) => /^Error: Holmake failed/.test(l)),
+        channel('HOL: Editor').lines);
+  check('but the log is not brought forward over the terminal',
+        channel('HOL: Editor').shows.length === 0,
+        channel('HOL: Editor').shows);
 
   reset();
   const killed = holmake(holdir);
@@ -295,6 +425,68 @@ function holmake(dir) {
   check('another extension\'s task is ignored',
         errors.length === 0 && channelLines.length === before,
         { errors, added: channelLines.slice(before) });
+
+  // ---- the terminal a failure puts back in front --------------------
+  // Identified by process id: a terminal's name is UI text VS Code
+  // composes from the task, and `Holmake (src)' does not pick out
+  // one directory in a tree with as many `src's as HOL has.
+  reset();
+  const byPid = openTerminal(fakeTerminal(4242));
+  const failing = holmake(holdir);
+  await failing.run(DOC);
+  fireStart({ execution: executed[0].exec, processId: 4242 });
+  await settle();
+  fireEnd({ execution: executed[0].exec, exitCode: 2 });
+  check('a failed run brings its own terminal back to the front',
+        byPid.shows.length === 1, byPid.shows);
+  check('and does that without taking focus either',
+        byPid.shows[0] === true, byPid.shows);
+
+  // A pid no terminal admits to -- the documented type of
+  // `Terminal.processId' allows `undefined' -- still leaves the one
+  // terminal that opened while the run was starting.
+  reset();
+  const unknown = holmake(holdir);
+  await unknown.run(DOC);
+  const byOpening = openTerminal(fakeTerminal(undefined));
+  fireStart({ execution: executed[0].exec, processId: 999 });
+  await settle();
+  fireEnd({ execution: executed[0].exec, exitCode: 2 });
+  check('a terminal that will not name its process is found by having ' +
+        'opened for the run', byOpening.shows.length === 1,
+        byOpening.shows);
+
+  reset();
+  const unidentified = holmake(holdir);
+  await unidentified.run(DOC);
+  const bystander = openTerminal(fakeTerminal(7));
+  fireEnd({ execution: executed[0].exec, exitCode: 2 });
+  check('a failure that never identified a terminal shows none',
+        bystander.shows.length === 0, bystander.shows);
+  check('and still reports itself', errors.length === 1, errors);
+
+  reset();
+  const closed = holmake(holdir);
+  await closed.run(DOC);
+  const gone = openTerminal(fakeTerminal(11));
+  fireStart({ execution: executed[0].exec, processId: 11 });
+  await settle();
+  closeTerminal(gone);
+  fireEnd({ execution: executed[0].exec, exitCode: 2 });
+  check('a terminal the user has closed is not shown again',
+        gone.shows.length === 0, gone.shows);
+
+  reset();
+  const clean = holmake(holdir);
+  await clean.run(DOC);
+  const quietTerm = openTerminal(fakeTerminal(13));
+  fireStart({ execution: executed[0].exec, processId: 13 });
+  await settle();
+  fireEnd({ execution: executed[0].exec, exitCode: 0 });
+  check('a clean run reveals neither the log nor the terminal',
+        channel('HOL: Editor').shows.length === 0 &&
+          quietTerm.shows.length === 0,
+        { log: channel('HOL: Editor').shows, term: quietTerm.shows });
 
   // ---- one at a time, per directory ---------------------------------
   reset();

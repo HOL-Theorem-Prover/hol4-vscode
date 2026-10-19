@@ -3,7 +3,7 @@
 ## 0.4.3
 
 - A failed Holmake run no longer swaps the panel away from its own
-output. 
+output.
 
 ## 0.4.2
 

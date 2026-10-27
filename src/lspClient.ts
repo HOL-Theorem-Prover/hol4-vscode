@@ -8,6 +8,7 @@ import {
     State,
 } from 'vscode-languageclient/node';
 import { error, hitLocation } from './common';
+import { isHostFileUri, sourceFileUri, toServerUri, toEditorUri } from './uris';
 
 /** Position argument for the `$/hol/goalState` custom request. */
 export interface GoalStatePosition {
@@ -133,7 +134,8 @@ function resolveHolExecutable(fallbackHoldir: string): string | undefined {
  * its working directory.
  */
 export function isHolScript(doc: vscode.TextDocument): boolean {
-    return doc.uri.scheme === 'file' && doc.uri.fsPath.endsWith('Script.sml');
+    return (isHostFileUri(doc.uri) || doc.uri.scheme === 'git') &&
+        sourceFileUri(doc.uri).fsPath.endsWith('Script.sml');
 }
 
 /** The configuration section vscode-languageclient reads the trace
@@ -520,7 +522,7 @@ export class LspClients implements vscode.Disposable {
         }
         this.setBlocked(doc.uri.toString(), undefined);
         entry.client.sendNotification('$/hol/retryCompile',
-            { textDocument: { uri: doc.uri.toString() } })
+            { textDocument: { uri: toServerUri(doc.uri) } })
             .catch((err) => error(`LSP retryCompile failed: ${err}`));
     }
 
@@ -605,7 +607,7 @@ export class LspClients implements vscode.Disposable {
             return;
         }
         const target = await vscode.workspace.openTextDocument(
-            vscode.Uri.parse(uri));
+            toEditorUri(vscode.Uri.parse(uri), doc.uri));
         const editor = await vscode.window.showTextDocument(target);
         // `line` is 1-based, and 0 when the location was not recorded.
         const at = new vscode.Position(Math.max(0, (line ?? 1) - 1), 0);
@@ -646,7 +648,7 @@ export class LspClients implements vscode.Disposable {
     }
 
     private create(exe: string, doc: vscode.TextDocument): ScriptClient {
-        const fsPath = doc.uri.fsPath;
+        const fsPath = sourceFileUri(doc.uri).fsPath;
         const rel = vscode.workspace.asRelativePath(doc.uri);
         const output = vscode.window.createOutputChannel(`HOL4 LSP: ${rel}`);
         const trace = vscode.window.createOutputChannel(
@@ -673,7 +675,36 @@ export class LspClients implements vscode.Disposable {
             // `workspace.textDocuments` adopt every other open SML
             // document into this process, which is exactly the
             // sharing that yields wrong goal states.
-            documentSelector: [{ scheme: 'file', pattern: globEscape(fsPath) }],
+            documentSelector: [{
+                scheme: doc.uri.scheme, pattern: globEscape(doc.uri.fsPath),
+            }],
+            // Selectors cannot distinguish Git refs in a URI's query.
+            // Guard synchronization and document providers by full URI so
+            // two revisions of the same path never share buffers or answers.
+            middleware: doc.uri.scheme === 'git' ? new Proxy({}, {
+                get: (_target, hook: string) => {
+                    if (!/^(did|will|provide|prepare)/.test(hook)) return undefined;
+                    const cached = Reflect.get(_target, hook);
+                    if (cached) return cached;
+                    const guarded = (...args: unknown[]) => {
+                        const first = args[0] as {
+                            uri?: vscode.Uri; document?: vscode.TextDocument;
+                        } | undefined;
+                        const uri = first?.document?.uri ?? first?.uri;
+                        if (uri && uri.toString() !== doc.uri.toString()) {
+                            return Promise.resolve(undefined);
+                        }
+                        const next = args.pop() as (...params: unknown[]) => unknown;
+                        return next(...args);
+                    };
+                    Reflect.set(_target, hook, guarded);
+                    return guarded;
+                },
+            }) : undefined,
+            uriConverters: {
+                code2Protocol: toServerUri,
+                protocol2Code: uri => toEditorUri(vscode.Uri.parse(uri), doc.uri),
+            },
             // Sharing the name keeps the Problems panel reading
             // "hol4-lsp" for every file; the collections themselves
             // stay one per client, each owning its own URI.
@@ -809,7 +840,7 @@ export class LspClients implements vscode.Disposable {
         entry.evalOut.show(true);
         try {
             await entry.client.sendRequest('$/eval', {
-                uri: doc.uri.toString(),
+                uri: toServerUri(doc.uri),
                 code,
                 incr: 2,
                 holdep: 1,

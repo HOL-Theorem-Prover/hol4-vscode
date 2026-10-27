@@ -8,6 +8,7 @@ import {
     LspClients,
     isHolScript,
 } from './lspClient';
+import { toServerUri } from './uris';
 
 const DEBOUNCE_MS = 150;
 
@@ -134,7 +135,7 @@ export class GoalsView implements vscode.Disposable {
         // the `positionEncodings` this client advertises, which is
         // utf-16, so `character` means what VS Code means by it.
         const params: GoalStateParams = {
-            textDocument: { uri: doc.uri.toString() },
+            textDocument: { uri: toServerUri(doc.uri) },
             position: { line: pos.line, character: pos.character },
             // Only this side knows how wide the pane is, so the server
             // cannot pick the line breaking without being told.
